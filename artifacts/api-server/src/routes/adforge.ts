@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
-import { count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import {
   CreateBrandAssetBody,
   CreateBrandBody,
@@ -30,6 +30,7 @@ import {
   UpdateCreativeResponse,
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
+import { generateAndStoreReplicateImage } from "../lib/replicate";
 import {
   brandAssetsTable,
   brandsTable,
@@ -66,6 +67,57 @@ function requireAuth(req: Request, res: Response, next: () => void) {
   next();
 }
 
+async function getUserBrand(userId: string) {
+  const [userBrand] = await db
+    .select()
+    .from(brandsTable)
+    .where(eq(brandsTable.ownerId, userId))
+    .orderBy(desc(brandsTable.updatedAt))
+    .limit(1);
+  if (userBrand) return userBrand;
+
+  const [demoBrand] = await db
+    .select()
+    .from(brandsTable)
+    .where(eq(brandsTable.isDemo, true))
+    .limit(1);
+  return demoBrand;
+}
+
+async function getUserCampaign(userId: string, campaignId: string) {
+  const brand = await getUserBrand(userId);
+  if (!brand) return undefined;
+  const [campaign] = await db
+    .select()
+    .from(campaignsTable)
+    .where(
+      and(
+        eq(campaignsTable.id, campaignId),
+        eq(campaignsTable.brandId, brand.id),
+      ),
+    );
+  return campaign;
+}
+
+async function getUserCreative(userId: string, creativeId: string) {
+  const brand = await getUserBrand(userId);
+  if (!brand) return undefined;
+  const [creative] = await db
+    .select({ creative: creativesTable })
+    .from(creativesTable)
+    .innerJoin(
+      campaignsTable,
+      eq(creativesTable.campaignId, campaignsTable.id),
+    )
+    .where(
+      and(
+        eq(creativesTable.id, creativeId),
+        eq(campaignsTable.brandId, brand.id),
+      ),
+    );
+  return creative?.creative;
+}
+
 async function seedDemoData() {
   const [existingBrand] = await db
     .select({ id: brandsTable.id })
@@ -77,6 +129,7 @@ async function seedDemoData() {
   const timestamp = now();
   await db.insert(brandsTable).values({
     id: DEMO_BRAND_ID,
+    ownerId: null,
     name: "KORA Coffee",
     website: "https://kora.coffee",
     description:
@@ -257,12 +310,8 @@ async function ensureDemoData() {
   await seedPromise;
 }
 
-async function generateConcepts(campaignId: string) {
-  const [campaign] = await db
-    .select()
-    .from(campaignsTable)
-    .where(eq(campaignsTable.id, campaignId))
-    .limit(1);
+async function generateConcepts(userId: string, campaignId: string) {
+  const campaign = await getUserCampaign(userId, campaignId);
   if (!campaign) return [];
 
   const existing = await db
@@ -305,23 +354,65 @@ router.use(requireAuth);
 
 router.get("/dashboard", async (req, res) => {
   await ensureDemoData();
-  const [brand] = await db.select().from(brandsTable).limit(1);
+  const brand = await getUserBrand(getAuth(req).userId!);
+  const brandId = brand?.id;
   const campaigns = await db
     .select()
     .from(campaignsTable)
+    .where(brandId ? eq(campaignsTable.brandId, brandId) : undefined)
     .orderBy(desc(campaignsTable.createdAt))
     .limit(4);
   const creatives = await db
     .select()
     .from(creativesTable)
+    .where(
+      brandId
+        ? inArray(
+            creativesTable.campaignId,
+            db
+              .select({ id: campaignsTable.id })
+              .from(campaignsTable)
+              .where(eq(campaignsTable.brandId, brandId)),
+          )
+        : undefined,
+    )
     .orderBy(desc(creativesTable.createdAt))
     .limit(8);
-  const [campaignCount] = await db.select({ total: count() }).from(campaignsTable);
-  const [creativeCount] = await db.select({ total: count() }).from(creativesTable);
+  const [campaignCount] = await db
+    .select({ total: count() })
+    .from(campaignsTable)
+    .where(brandId ? eq(campaignsTable.brandId, brandId) : undefined);
+  const [creativeCount] = await db
+    .select({ total: count() })
+    .from(creativesTable)
+    .where(
+      brandId
+        ? inArray(
+            creativesTable.campaignId,
+            db
+              .select({ id: campaignsTable.id })
+              .from(campaignsTable)
+              .where(eq(campaignsTable.brandId, brandId)),
+          )
+        : undefined,
+    );
   const [savedCount] = await db
     .select({ total: count() })
     .from(creativesTable)
-    .where(eq(creativesTable.isFavorite, true));
+    .where(
+      and(
+        eq(creativesTable.isFavorite, true),
+        brandId
+          ? inArray(
+              creativesTable.campaignId,
+              db
+                .select({ id: campaignsTable.id })
+                .from(campaignsTable)
+                .where(eq(campaignsTable.brandId, brandId)),
+            )
+          : undefined,
+      ),
+    );
   const payload = {
     brandHealth: 94,
     creditsRemaining: 124,
@@ -339,9 +430,9 @@ router.get("/dashboard", async (req, res) => {
   res.json(GetDashboardResponse.parse(payload));
 });
 
-router.get("/brands/current", async (_req, res) => {
+router.get("/brands/current", async (req, res) => {
   await ensureDemoData();
-  const [brand] = await db.select().from(brandsTable).orderBy(desc(brandsTable.updatedAt)).limit(1);
+  const brand = await getUserBrand(getAuth(req).userId!);
   res.json(GetCurrentBrandResponse.parse(brand));
 });
 
@@ -352,13 +443,13 @@ router.post("/brands/current", async (req, res) => {
     return;
   }
   const timestamp = now();
-  const brand = { id: randomUUID(), ...parsed.data, logoPath: parsed.data.logoPath ?? null, isDemo: false, createdAt: timestamp, updatedAt: timestamp };
+  const brand = { id: randomUUID(), ownerId: getAuth(req).userId!, ...parsed.data, logoPath: parsed.data.logoPath ?? null, isDemo: false, createdAt: timestamp, updatedAt: timestamp };
   await db.insert(brandsTable).values(brand);
   res.status(201).json(CreateBrandResponse.parse(brand));
 });
 
 router.patch("/brands/current", async (req, res) => {
-  const [current] = await db.select().from(brandsTable).orderBy(desc(brandsTable.updatedAt)).limit(1);
+  const current = await getUserBrand(getAuth(req).userId!);
   if (!current) {
     res.status(404).json({ error: "Brand not found." });
     return;
@@ -368,13 +459,17 @@ router.patch("/brands/current", async (req, res) => {
     res.status(400).json({ error: "Invalid brand details." });
     return;
   }
-  const [updated] = await db.update(brandsTable).set({ ...parsed.data, updatedAt: now() }).where(eq(brandsTable.id, current.id)).returning();
+  if (current.isDemo) {
+    res.status(403).json({ error: "Create your own brand before editing the demo workspace." });
+    return;
+  }
+  const [updated] = await db.update(brandsTable).set({ ...parsed.data, updatedAt: now() }).where(and(eq(brandsTable.id, current.id), eq(brandsTable.ownerId, getAuth(req).userId!))).returning();
   res.json(GetCurrentBrandResponse.parse(updated));
 });
 
-router.get("/brands/assets", async (_req, res) => {
+router.get("/brands/assets", async (req, res) => {
   await ensureDemoData();
-  const [brand] = await db.select().from(brandsTable).orderBy(desc(brandsTable.updatedAt)).limit(1);
+  const brand = await getUserBrand(getAuth(req).userId!);
   const assets = brand ? await db.select().from(brandAssetsTable).where(eq(brandAssetsTable.brandId, brand.id)).orderBy(desc(brandAssetsTable.createdAt)) : [];
   res.json(ListBrandAssetsResponse.parse(assets));
 });
@@ -385,9 +480,13 @@ router.post("/brands/assets", async (req, res) => {
     res.status(400).json({ error: "Invalid asset details." });
     return;
   }
-  const [brand] = await db.select().from(brandsTable).orderBy(desc(brandsTable.updatedAt)).limit(1);
+  const brand = await getUserBrand(getAuth(req).userId!);
   if (!brand) {
     res.status(404).json({ error: "Create a brand first." });
+    return;
+  }
+  if (brand.isDemo) {
+    res.status(403).json({ error: "Create your own brand before adding assets." });
     return;
   }
   const asset = { id: randomUUID(), brandId: brand.id, ...parsed.data, objectPath: parsed.data.objectPath ?? null, tags: parsed.data.tags ?? [], isFavorite: false, isDemo: false, createdAt: now(), updatedAt: now() };
@@ -396,13 +495,19 @@ router.post("/brands/assets", async (req, res) => {
 });
 
 router.delete("/brands/assets/:assetId", async (req, res) => {
-  await db.delete(brandAssetsTable).where(eq(brandAssetsTable.id, req.params.assetId));
+  const brand = await getUserBrand(getAuth(req).userId!);
+  if (!brand || brand.isDemo) {
+    res.status(403).json({ error: "Create your own brand before managing assets." });
+    return;
+  }
+  await db.delete(brandAssetsTable).where(and(eq(brandAssetsTable.id, req.params.assetId), eq(brandAssetsTable.brandId, brand.id)));
   res.status(204).send();
 });
 
-router.get("/campaigns", async (_req, res) => {
+router.get("/campaigns", async (req, res) => {
   await ensureDemoData();
-  const campaigns = await db.select().from(campaignsTable).orderBy(desc(campaignsTable.createdAt));
+  const brand = await getUserBrand(getAuth(req).userId!);
+  const campaigns = await db.select().from(campaignsTable).where(brand ? eq(campaignsTable.brandId, brand.id) : undefined).orderBy(desc(campaignsTable.createdAt));
   res.json(ListCampaignsResponse.parse(campaigns));
 });
 
@@ -412,9 +517,13 @@ router.post("/campaigns", async (req, res) => {
     res.status(400).json({ error: "Complete the campaign brief before saving." });
     return;
   }
-  const [brand] = await db.select().from(brandsTable).orderBy(desc(brandsTable.updatedAt)).limit(1);
+  const brand = await getUserBrand(getAuth(req).userId!);
   if (!brand) {
     res.status(404).json({ error: "Create a brand first." });
+    return;
+  }
+  if (brand.isDemo) {
+    res.status(403).json({ error: "Create your own brand before creating campaigns." });
     return;
   }
   const timestamp = now();
@@ -429,7 +538,7 @@ router.get("/campaigns/:campaignId", async (req, res) => {
     res.status(400).json({ error: "Invalid campaign." });
     return;
   }
-  const [campaign] = await db.select().from(campaignsTable).where(eq(campaignsTable.id, parsed.data.campaignId));
+  const campaign = await getUserCampaign(getAuth(req).userId!, parsed.data.campaignId);
   if (!campaign) {
     res.status(404).json({ error: "Campaign not found." });
     return;
@@ -438,22 +547,38 @@ router.get("/campaigns/:campaignId", async (req, res) => {
 });
 
 router.get("/campaigns/:campaignId/concepts", async (req, res) => {
-  const concepts = await generateConcepts(req.params.campaignId);
+  const concepts = await generateConcepts(getAuth(req).userId!, req.params.campaignId);
   res.json(ListCampaignConceptsResponse.parse(concepts));
 });
 
 router.post("/campaigns/:campaignId/concepts", async (req, res) => {
-  const concepts = await generateConcepts(req.params.campaignId);
+  const campaign = await getUserCampaign(getAuth(req).userId!, req.params.campaignId);
+  if (!campaign) {
+    res.status(404).json({ error: "Campaign not found." });
+    return;
+  }
+  if (campaign.isDemo) {
+    res.status(403).json({ error: "Create your own campaign before generating concepts." });
+    return;
+  }
+  const concepts = await generateConcepts(getAuth(req).userId!, campaign.id);
   res.status(201).json(GenerateCampaignConceptsResponse.parse(concepts));
 });
 
 router.get("/creatives", async (req, res) => {
   await ensureDemoData();
   const parsed = ListCreativesQueryParams.safeParse(req.query);
-  const creatives = parsed.success && parsed.data.campaignId
-    ? await db.select().from(creativesTable).where(eq(creativesTable.campaignId, parsed.data.campaignId)).orderBy(desc(creativesTable.createdAt))
-    : await db.select().from(creativesTable).orderBy(desc(creativesTable.createdAt));
-  res.json(ListCreativesResponse.parse(creatives));
+  const brand = await getUserBrand(getAuth(req).userId!);
+  const campaignFilter = parsed.success && parsed.data.campaignId
+    ? and(eq(campaignsTable.brandId, brand?.id ?? ''), eq(campaignsTable.id, parsed.data.campaignId))
+    : brand ? eq(campaignsTable.brandId, brand.id) : undefined;
+  const creatives = await db
+    .select({ creative: creativesTable })
+    .from(creativesTable)
+    .innerJoin(campaignsTable, eq(creativesTable.campaignId, campaignsTable.id))
+    .where(campaignFilter)
+    .orderBy(desc(creativesTable.createdAt));
+  res.json(ListCreativesResponse.parse(creatives.map(({ creative }) => creative)));
 });
 
 router.post("/creatives/generate", async (req, res) => {
@@ -462,12 +587,16 @@ router.post("/creatives/generate", async (req, res) => {
     res.status(400).json({ error: "Choose a campaign before generating creatives." });
     return;
   }
-  const [campaign] = await db.select().from(campaignsTable).where(eq(campaignsTable.id, parsed.data.campaignId));
+  const campaign = await getUserCampaign(getAuth(req).userId!, parsed.data.campaignId);
   if (!campaign) {
     res.status(404).json({ error: "Campaign not found." });
     return;
   }
-  const concepts = await generateConcepts(campaign.id);
+  if (campaign.isDemo) {
+    res.status(403).json({ error: "Create your own campaign before generating creatives." });
+    return;
+  }
+  const concepts = await generateConcepts(getAuth(req).userId!, campaign.id);
   const selected = parsed.data.conceptIds?.length ? concepts.filter((concept) => parsed.data.conceptIds?.includes(concept.id)) : concepts;
   const imageOffset = Math.floor(Math.random() * demoImages.length);
   const countToCreate = Math.min(parsed.data.count ?? selected.length * 3, 12);
@@ -499,12 +628,22 @@ router.post("/creatives/generate", async (req, res) => {
       updatedAt: timestamp,
     };
   });
+  if (process.env.REPLICATE_API_TOKEN) {
+    for (const value of values) {
+      const concept = selected.find((item) => item.id === value.conceptId);
+      const generatedImage = await generateAndStoreReplicateImage({
+        prompt: `${concept?.visualDirection ?? value.creativeAngle}. ${value.headline}. ${value.bodyCopy}. No text in image.`,
+        aspectRatio: value.aspectRatio,
+      });
+      value.previewUrl = generatedImage.previewUrl;
+    }
+  }
   await db.insert(creativesTable).values(values);
   res.status(201).json(GenerateCreativesResponse.parse(values));
 });
 
 router.get("/creatives/:creativeId", async (req, res) => {
-  const [creative] = await db.select().from(creativesTable).where(eq(creativesTable.id, req.params.creativeId));
+  const creative = await getUserCreative(getAuth(req).userId!, req.params.creativeId);
   if (!creative) {
     res.status(404).json({ error: "Creative not found." });
     return;
@@ -519,7 +658,16 @@ router.patch("/creatives/:creativeId", async (req, res) => {
     res.status(400).json({ error: "Invalid creative update." });
     return;
   }
-  const [updated] = await db.update(creativesTable).set({ ...body.data, updatedAt: now() }).where(eq(creativesTable.id, params.data.creativeId)).returning();
+  const current = await getUserCreative(getAuth(req).userId!, params.data.creativeId);
+  if (!current) {
+    res.status(404).json({ error: "Creative not found." });
+    return;
+  }
+  if (current.isDemo) {
+    res.status(403).json({ error: "Create your own creative before editing it." });
+    return;
+  }
+  const [updated] = await db.update(creativesTable).set({ ...body.data, updatedAt: now() }).where(eq(creativesTable.id, current.id)).returning();
   if (!updated) {
     res.status(404).json({ error: "Creative not found." });
     return;
@@ -528,12 +676,21 @@ router.patch("/creatives/:creativeId", async (req, res) => {
 });
 
 router.get("/creatives/:creativeId/variations", async (req, res) => {
-  const variations = await db.select().from(creativeVariationsTable).where(eq(creativeVariationsTable.creativeId, req.params.creativeId)).orderBy(desc(creativeVariationsTable.createdAt));
+  const creative = await getUserCreative(getAuth(req).userId!, req.params.creativeId);
+  if (!creative) {
+    res.status(404).json({ error: "Creative not found." });
+    return;
+  }
+  if (creative.isDemo) {
+    res.status(403).json({ error: "Create your own creative before generating variations." });
+    return;
+  }
+  const variations = await db.select().from(creativeVariationsTable).where(eq(creativeVariationsTable.creativeId, creative.id)).orderBy(desc(creativeVariationsTable.createdAt));
   res.json(ListCreativeVariationsResponse.parse(variations));
 });
 
 router.post("/creatives/:creativeId/variations", async (req, res) => {
-  const [creative] = await db.select().from(creativesTable).where(eq(creativesTable.id, req.params.creativeId));
+  const creative = await getUserCreative(getAuth(req).userId!, req.params.creativeId);
   if (!creative) {
     res.status(404).json({ error: "Creative not found." });
     return;

@@ -14,6 +14,7 @@ const timestamps = {
 
 export const brandsTable = pgTable("adforge_brands", {
   id: text("id").primaryKey(),
+  ownerId: text("owner_id"),
   name: text("name").notNull(),
   website: text("website").notNull(),
   description: text("description").notNull(),

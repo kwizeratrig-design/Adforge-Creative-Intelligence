@@ -5,7 +5,6 @@ import {
 } from '@workspace/api-zod';
 import { Router, type IRouter, type Request, type Response } from 'express';
 
-import { ObjectPermission } from '../lib/objectAcl';
 import {
   ObjectNotFoundError,
   ObjectStorageService,
@@ -14,6 +13,14 @@ import { getAuth } from '@clerk/express';
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
+
+function requireStorageAuth(req: Request, res: Response): boolean {
+  if (getAuth(req).userId) {
+    return true;
+  }
+  res.status(401).json({ error: 'Unauthorized' });
+  return false;
+}
 
 /**
  * POST /storage/uploads/request-url
@@ -26,9 +33,7 @@ const objectStorageService = new ObjectStorageService();
 router.post(
   '/storage/uploads/request-url',
   async (req: Request, res: Response) => {
-    if (!getAuth(req).userId) {
-      res.status(401).json({ error: 'Unauthorized' });
-
+    if (!requireStorageAuth(req, res)) {
       return;
     }
 
@@ -40,6 +45,14 @@ router.post(
 
     try {
       const { name, size, contentType } = parsed.data;
+      if (size > 10 * 1024 * 1024) {
+        res.status(413).json({ error: 'Files must be 10 MB or smaller' });
+        return;
+      }
+      if (!contentType.startsWith('image/')) {
+        res.status(415).json({ error: 'Only image files are supported' });
+        return;
+      }
 
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
       const objectPath =
@@ -106,27 +119,16 @@ router.get(
  * be protected with authentication or ACL checks based on the use case.
  */
 router.get('/storage/objects/*path', async (req: Request, res: Response) => {
+  if (!requireStorageAuth(req, res)) {
+    return;
+  }
+
   try {
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join('/') : raw;
     const objectPath = `/objects/${wildcardPath}`;
     const objectFile =
       await objectStorageService.getObjectEntityFile(objectPath);
-
-    // --- Protected route example (uncomment when using replit-auth) ---
-    // if (!req.isAuthenticated()) {
-    //   res.status(401).json({ error: "Unauthorized" });
-    //   return;
-    // }
-    // const canAccess = await objectStorageService.canAccessObjectEntity({
-    //   userId: req.user.id,
-    //   objectFile,
-    //   requestedPermission: ObjectPermission.READ,
-    // });
-    // if (!canAccess) {
-    //   res.status(403).json({ error: "Forbidden" });
-    //   return;
-    // }
 
     const response = await objectStorageService.downloadObject(objectFile);
 

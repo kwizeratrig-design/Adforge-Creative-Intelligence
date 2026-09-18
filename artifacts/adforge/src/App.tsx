@@ -15,6 +15,7 @@ import {
   useGenerateCreatives, useGetCreative, getGetCreativeQueryKey, useUpdateCreative,
   useListCreativeVariations, getListCreativeVariationsQueryKey, useGenerateCreativeVariations,
   useGetCreativeIntelligence,
+  setBaseUrl,
 } from '@workspace/api-client-react';
 import {
   ArrowUpRight, BarChart3, BookOpen, ChevronRight, CircleHelp,
@@ -27,6 +28,8 @@ import { Link, Redirect, Route, Switch, useLocation, useParams, Router as Wouter
 const queryClient = new QueryClient();
 const onRetry = () => queryClient.invalidateQueries({ queryKey: getListCampaignsQueryKey() });
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
+const apiBaseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || '';
+setBaseUrl(apiBaseUrl || null);
 const configuredClerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || '';
 const clerkPubKey = /^pk_(test|live)_[^\s]+$/.test(configuredClerkKey) && !configuredClerkKey.includes('your_key_here') ? configuredClerkKey : '';
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
@@ -119,8 +122,8 @@ function BrandDNA() {
   const [tagline, setTagline] = useState('');
   const [notice, setNotice] = useState('');
   const current = (key: string, fallback: any = '') => form[key] ?? brand[key] ?? fallback;
-  const save = () => { const payload: any = { name: current('name', 'KORA Coffee'), website: current('website'), description: current('description'), industry: current('industry', 'Coffee'), audience: current('audience'), personality: current('personality', ['Considered', 'Warm', 'Curious']), visualStyle: current('visualStyle', 'Editorial, tactile, quietly bold'), typography: current('typography', 'Contemporary grotesk with expressive serif moments'), primaryColor: current('primaryColor', '#24251e'), secondaryColors: brand.secondaryColors || ['#e7dfc8', '#9caa54'], accentColor: current('accentColor', '#d7f36b'), logoPath: brand.logoPath }; const request = brandQ.data ? update : create; request.mutate({ data: payload }, { onSuccess: () => { setNotice('Brand brain saved.'); qc.invalidateQueries({ queryKey: getGetCurrentBrandQueryKey() }); } }); };
-  const onFile = async (file: File) => { try { const url = await requestUpload.mutateAsync({ data: { name: file.name, size: file.size, contentType: file.type } }); await fetch(url.uploadURL, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file }); await assetCreate.mutateAsync({ data: { name: file.name, type: file.type, objectPath: url.objectPath, previewUrl: `/api/storage${url.objectPath}`, tags: tagline ? [tagline] : [] } }); setNotice('Asset added to your brand library.'); qc.invalidateQueries({ queryKey: getListBrandAssetsQueryKey() }); } catch { setNotice('Upload could not be completed. Try again.'); } };
+  const save = () => { const payload: any = { name: current('name', 'KORA Coffee'), website: current('website'), description: current('description'), industry: current('industry', 'Coffee'), audience: current('audience'), personality: current('personality', ['Considered', 'Warm', 'Curious']), visualStyle: current('visualStyle', 'Editorial, tactile, quietly bold'), typography: current('typography', 'Contemporary grotesk with expressive serif moments'), primaryColor: current('primaryColor', '#24251e'), secondaryColors: brand.secondaryColors || ['#e7dfc8', '#9caa54'], accentColor: current('accentColor', '#d7f36b'), logoPath: brand.logoPath }; const request = brandQ.data && !brand.isDemo ? update : create; request.mutate({ data: payload }, { onSuccess: () => { setNotice('Brand brain saved.'); qc.invalidateQueries({ queryKey: getGetCurrentBrandQueryKey() }); } }); };
+  const onFile = async (file: File) => { try { const url = await requestUpload.mutateAsync({ data: { name: file.name, size: file.size, contentType: file.type } }); await fetch(url.uploadURL, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file }); await assetCreate.mutateAsync({ data: { name: file.name, type: file.type, objectPath: url.objectPath, previewUrl: `${apiBaseUrl}/api/storage${url.objectPath}`, tags: tagline ? [tagline] : [] } }); setNotice('Asset added to your brand library.'); qc.invalidateQueries({ queryKey: getListBrandAssetsQueryKey() }); } catch { setNotice('Upload could not be completed. Try again.'); } };
   if (brandQ.isLoading) return <LoadingPage title="Loading your brand brain" />;
   return <div className="page-in mx-auto max-w-[1260px]"><PageHeading eyebrow="Brand intelligence" title="The brand brain." body="Give the studio the details that make KORA unmistakably KORA. Changes ripple into every new concept." action={<button className={buttonPrimary} onClick={save} disabled={update.isPending} data-testid="button-save-brand">{update.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}Save changes</button>} />{notice && <div className="mb-5"><Notice tone={notice.includes('could') ? 'error' : 'success'}>{notice}</Notice></div>}
     {!brandQ.data && <Notice tone="default">No brand brain yet. We’ll create the KORA workspace when you save this form.</Notice>}

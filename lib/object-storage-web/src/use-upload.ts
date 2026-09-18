@@ -30,11 +30,7 @@ interface UseUploadOptions {
  * @example
  * ```tsx
  * function FileUploader() {
- *   const { uploadFile, isUploading, error } = useUpload({
- *     onSuccess: (response) => {
- *       console.log("Uploaded to:", response.objectPath);
- *     },
- *   });
+ *   const { uploadFile, isUploading, error } = useUpload();
  *
  *   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
  *     const file = e.target.files?.[0];

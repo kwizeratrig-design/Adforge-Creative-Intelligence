@@ -1,5 +1,3 @@
-import { ReplitConnectors } from "@replit/connectors-sdk";
-
 import { ObjectStorageService } from "./objectStorage";
 
 const DEFAULT_MODEL = "black-forest-labs/flux-schnell";
@@ -47,17 +45,17 @@ async function replicateRequest<T>(
   path: string,
   options: RequestInit,
 ): Promise<T> {
-  const connectors = new ReplitConnectors();
-  const proxyOptions = {
-    method: options.method,
-    body: options.body,
-    headers:
-      options.headers && new Headers(options.headers)
-        ? Object.fromEntries(new Headers(options.headers).entries())
-        : undefined,
-  };
-
-  const response = await connectors.proxy("replicate", path, proxyOptions);
+  const token = process.env.REPLICATE_API_TOKEN;
+  if (!token) {
+    throw new Error("REPLICATE_API_TOKEN must be configured to generate images.");
+  }
+  const headers = new Headers(options.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(`https://api.replicate.com${path}`, {
+    ...options,
+    headers,
+    signal: options.signal ?? AbortSignal.timeout(60_000),
+  });
   return parseResponse<T>(response);
 }
 
