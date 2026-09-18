@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "AdForge"
+description = "A premium creative intelligence workspace that turns brand DNA, campaign strategy, and audience insight into distinctive advertising concepts, creatives, variations, and performance learning."
+version = "1.0.0"
+id = "artifacts/adforge"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23088
+
+[services.development]
+run = "pnpm --filter @workspace/adforge run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/adforge", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/adforge/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23088"
+BASE_PATH = "/"

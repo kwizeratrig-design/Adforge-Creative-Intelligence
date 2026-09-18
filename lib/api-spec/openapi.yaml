@@ -1,0 +1,666 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: AdForge creative intelligence API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+  - name: dashboard
+  - name: brands
+  - name: campaigns
+  - name: creatives
+  - name: intelligence
+  - name: storage
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get workspace dashboard summary
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /brands/current:
+    get:
+      operationId: getCurrentBrand
+      tags: [brands]
+      summary: Get the current workspace brand
+      responses:
+        "200":
+          description: Brand
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Brand"
+    post:
+      operationId: createBrand
+      tags: [brands]
+      summary: Create a brand
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BrandInput"
+      responses:
+        "201":
+          description: Created brand
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Brand"
+    patch:
+      operationId: updateCurrentBrand
+      tags: [brands]
+      summary: Update the current brand
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BrandUpdate"
+      responses:
+        "200":
+          description: Updated brand
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Brand"
+  /brands/assets:
+    get:
+      operationId: listBrandAssets
+      tags: [brands]
+      summary: List brand assets
+      responses:
+        "200":
+          description: Brand assets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BrandAsset"
+    post:
+      operationId: createBrandAsset
+      tags: [brands]
+      summary: Save uploaded asset metadata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BrandAssetInput"
+      responses:
+        "201":
+          description: Created asset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrandAsset"
+  /brands/assets/{assetId}:
+    delete:
+      operationId: deleteBrandAsset
+      tags: [brands]
+      summary: Delete a brand asset
+      parameters:
+        - $ref: "#/components/parameters/AssetId"
+      responses:
+        "204":
+          description: Deleted
+  /campaigns:
+    get:
+      operationId: listCampaigns
+      tags: [campaigns]
+      summary: List campaigns
+      responses:
+        "200":
+          description: Campaigns
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Campaign"
+    post:
+      operationId: createCampaign
+      tags: [campaigns]
+      summary: Create a campaign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CampaignInput"
+      responses:
+        "201":
+          description: Created campaign
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+  /campaigns/{campaignId}:
+    get:
+      operationId: getCampaign
+      tags: [campaigns]
+      summary: Get a campaign
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+      responses:
+        "200":
+          description: Campaign
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+    patch:
+      operationId: updateCampaign
+      tags: [campaigns]
+      summary: Update a campaign
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CampaignUpdate"
+      responses:
+        "200":
+          description: Updated campaign
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+  /campaigns/{campaignId}/concepts:
+    get:
+      operationId: listCampaignConcepts
+      tags: [campaigns]
+      summary: List campaign concepts
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+      responses:
+        "200":
+          description: Concepts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CreativeConcept"
+    post:
+      operationId: generateCampaignConcepts
+      tags: [campaigns]
+      summary: Generate strategy-led concept families
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+      responses:
+        "201":
+          description: Generated concepts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CreativeConcept"
+  /creatives:
+    get:
+      operationId: listCreatives
+      tags: [creatives]
+      summary: List creatives
+      parameters:
+        - name: campaignId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Creatives
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Creative"
+  /creatives/generate:
+    post:
+      operationId: generateCreatives
+      tags: [creatives]
+      summary: Generate demo or provider-backed creatives
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreativeGenerationInput"
+      responses:
+        "201":
+          description: Generated creatives
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Creative"
+  /creatives/{creativeId}:
+    get:
+      operationId: getCreative
+      tags: [creatives]
+      summary: Get creative detail
+      parameters:
+        - $ref: "#/components/parameters/CreativeId"
+      responses:
+        "200":
+          description: Creative detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Creative"
+    patch:
+      operationId: updateCreative
+      tags: [creatives]
+      summary: Edit or favorite a creative
+      parameters:
+        - $ref: "#/components/parameters/CreativeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreativeUpdate"
+      responses:
+        "200":
+          description: Updated creative
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Creative"
+  /creatives/{creativeId}/variations:
+    get:
+      operationId: listCreativeVariations
+      tags: [creatives]
+      summary: List creative variations
+      parameters:
+        - $ref: "#/components/parameters/CreativeId"
+      responses:
+        "200":
+          description: Creative variations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CreativeVariation"
+    post:
+      operationId: generateCreativeVariations
+      tags: [creatives]
+      summary: Generate strategy-preserving variations
+      parameters:
+        - $ref: "#/components/parameters/CreativeId"
+      responses:
+        "201":
+          description: Generated variations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CreativeVariation"
+  /creative-intelligence:
+    get:
+      operationId: getCreativeIntelligence
+      tags: [intelligence]
+      summary: Get sample creative intelligence insights
+      responses:
+        "200":
+          description: Creative intelligence summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntelligenceSummary"
+  /storage/uploads/request-url:
+    post:
+      operationId: requestUploadUrl
+      tags: [storage]
+      summary: Request a presigned upload URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadRequest"
+      responses:
+        "200":
+          description: Upload instructions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResponse"
+components:
+  parameters:
+    AssetId:
+      name: assetId
+      in: path
+      required: true
+      schema: { type: string }
+    CampaignId:
+      name: campaignId
+      in: path
+      required: true
+      schema: { type: string }
+    CreativeId:
+      name: creativeId
+      in: path
+      required: true
+      schema: { type: string }
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status: { type: string }
+      required: [status]
+    Brand:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        website: { type: string }
+        description: { type: string }
+        industry: { type: string }
+        audience: { type: string }
+        personality:
+          type: array
+          items: { type: string }
+        visualStyle: { type: string }
+        typography: { type: string }
+        primaryColor: { type: string }
+        secondaryColors:
+          type: array
+          items: { type: string }
+        accentColor: { type: string }
+        logoPath: { type: ["string", "null"] }
+        isDemo: { type: boolean }
+        updatedAt: { type: string }
+      required: [id, name, website, description, industry, audience, personality, visualStyle, typography, primaryColor, secondaryColors, accentColor, logoPath, isDemo, updatedAt]
+    BrandInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        website: { type: string }
+        description: { type: string }
+        industry: { type: string }
+        audience: { type: string }
+        personality:
+          type: array
+          items: { type: string }
+        visualStyle: { type: string }
+        typography: { type: string }
+        primaryColor: { type: string }
+        secondaryColors:
+          type: array
+          items: { type: string }
+        accentColor: { type: string }
+        logoPath: { type: ["string", "null"] }
+      required: [name, website, description, industry, audience, personality, visualStyle, typography, primaryColor, secondaryColors, accentColor]
+    BrandUpdate:
+      allOf:
+        - $ref: "#/components/schemas/BrandInput"
+    BrandAsset:
+      type: object
+      properties:
+        id: { type: string }
+        brandId: { type: string }
+        name: { type: string }
+        type: { type: string }
+        objectPath: { type: ["string", "null"] }
+        previewUrl: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        isFavorite: { type: boolean }
+        isDemo: { type: boolean }
+        createdAt: { type: string }
+      required: [id, brandId, name, type, objectPath, previewUrl, tags, isFavorite, isDemo, createdAt]
+    BrandAssetInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        type: { type: string }
+        objectPath: { type: ["string", "null"] }
+        previewUrl: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+      required: [name, type, previewUrl]
+    Campaign:
+      type: object
+      properties:
+        id: { type: string }
+        brandId: { type: string }
+        name: { type: string }
+        productName: { type: string }
+        description: { type: string }
+        productUrl: { type: string }
+        benefits:
+          type: array
+          items: { type: string }
+        price: { type: ["string", "null"] }
+        offer: { type: ["string", "null"] }
+        cta: { type: string }
+        audience: { type: string }
+        ageRange: { type: string }
+        location: { type: string }
+        interests:
+          type: array
+          items: { type: string }
+        painPoints:
+          type: array
+          items: { type: string }
+        desires:
+          type: array
+          items: { type: string }
+        objective: { type: string }
+        platform: { type: string }
+        format: { type: string }
+        aspectRatio: { type: string }
+        status: { type: string }
+        isDemo: { type: boolean }
+        createdAt: { type: string }
+      required: [id, brandId, name, productName, description, productUrl, benefits, price, offer, cta, audience, ageRange, location, interests, painPoints, desires, objective, platform, format, aspectRatio, status, isDemo, createdAt]
+    CampaignInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        productName: { type: string, minLength: 1 }
+        description: { type: string }
+        productUrl: { type: string }
+        benefits:
+          type: array
+          items: { type: string }
+        price: { type: ["string", "null"] }
+        offer: { type: ["string", "null"] }
+        cta: { type: string }
+        audience: { type: string }
+        ageRange: { type: string }
+        location: { type: string }
+        interests:
+          type: array
+          items: { type: string }
+        painPoints:
+          type: array
+          items: { type: string }
+        desires:
+          type: array
+          items: { type: string }
+        objective: { type: string }
+        platform: { type: string }
+        format: { type: string }
+        aspectRatio: { type: string }
+      required: [name, productName, description, productUrl, benefits, cta, audience, ageRange, location, interests, painPoints, desires, objective, platform, format, aspectRatio]
+    CampaignUpdate:
+      allOf:
+        - $ref: "#/components/schemas/CampaignInput"
+    CreativeConcept:
+      type: object
+      properties:
+        id: { type: string }
+        campaignId: { type: string }
+        name: { type: string }
+        family: { type: string }
+        angle: { type: string }
+        visualDirection: { type: string }
+        hook: { type: string }
+        headline: { type: string }
+        bodyCopy: { type: string }
+        cta: { type: string }
+        composition: { type: string }
+        colorDirection: { type: string }
+        emotion: { type: string }
+        audienceInsight: { type: string }
+        creativeCount: { type: integer }
+      required: [id, campaignId, name, family, angle, visualDirection, hook, headline, bodyCopy, cta, composition, colorDirection, emotion, audienceInsight, creativeCount]
+    Creative:
+      type: object
+      properties:
+        id: { type: string }
+        campaignId: { type: string }
+        conceptId: { type: string }
+        conceptName: { type: string }
+        family: { type: string }
+        hook: { type: string }
+        headline: { type: string }
+        bodyCopy: { type: string }
+        cta: { type: string }
+        previewUrl: { type: string }
+        platform: { type: string }
+        format: { type: string }
+        aspectRatio: { type: string }
+        emotionalDriver: { type: string }
+        creativeAngle: { type: string }
+        audienceInsight: { type: string }
+        readinessScore: { type: integer }
+        isFavorite: { type: boolean }
+        isDemo: { type: boolean }
+        status: { type: string }
+        createdAt: { type: string }
+      required: [id, campaignId, conceptId, conceptName, family, hook, headline, bodyCopy, cta, previewUrl, platform, format, aspectRatio, emotionalDriver, creativeAngle, audienceInsight, readinessScore, isFavorite, isDemo, status, createdAt]
+    CreativeGenerationInput:
+      type: object
+      properties:
+        campaignId: { type: string, minLength: 1 }
+        conceptIds:
+          type: array
+          items: { type: string }
+        count: { type: integer, minimum: 1, maximum: 12 }
+      required: [campaignId]
+    CreativeUpdate:
+      type: object
+      properties:
+        headline: { type: string }
+        bodyCopy: { type: string }
+        cta: { type: string }
+        isFavorite: { type: boolean }
+    CreativeVariation:
+      type: object
+      properties:
+        id: { type: string }
+        creativeId: { type: string }
+        dimension: { type: string }
+        label: { type: string }
+        headline: { type: string }
+        bodyCopy: { type: string }
+        cta: { type: string }
+        previewUrl: { type: string }
+        readinessScore: { type: integer }
+        createdAt: { type: string }
+      required: [id, creativeId, dimension, label, headline, bodyCopy, cta, previewUrl, readinessScore, createdAt]
+    DashboardSummary:
+      type: object
+      properties:
+        brandHealth: { type: integer }
+        creditsRemaining: { type: integer }
+        activeCampaigns: { type: integer }
+        generatedCreatives: { type: integer }
+        savedCreatives: { type: integer }
+        recentCampaigns:
+          type: array
+          items:
+            $ref: "#/components/schemas/Campaign"
+        recentCreatives:
+          type: array
+          items:
+            $ref: "#/components/schemas/Creative"
+        activity:
+          type: array
+          items:
+            $ref: "#/components/schemas/Activity"
+      required: [brandHealth, creditsRemaining, activeCampaigns, generatedCreatives, savedCreatives, recentCampaigns, recentCreatives, activity]
+    Activity:
+      type: object
+      properties:
+        id: { type: string }
+        label: { type: string }
+        detail: { type: string }
+        timestamp: { type: string }
+        type: { type: string }
+      required: [id, label, detail, timestamp, type]
+    IntelligenceSummary:
+      type: object
+      properties:
+        isSampleData: { type: boolean }
+        totalImpressions: { type: integer }
+        averageCtr: { type: number }
+        conversionRate: { type: number }
+        winningFamily: { type: string }
+        winningHook: { type: string }
+        familyPerformance:
+          type: array
+          items:
+            $ref: "#/components/schemas/PerformancePoint"
+        weeklyPerformance:
+          type: array
+          items:
+            $ref: "#/components/schemas/PerformancePoint"
+        recommendations:
+          type: array
+          items: { type: string }
+      required: [isSampleData, totalImpressions, averageCtr, conversionRate, winningFamily, winningHook, familyPerformance, weeklyPerformance, recommendations]
+    PerformancePoint:
+      type: object
+      properties:
+        label: { type: string }
+        value: { type: number }
+        secondaryValue: { type: ["number", "null"] }
+      required: [label, value, secondaryValue]
+    UploadRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        size: { type: integer, minimum: 1, maximum: 10485760 }
+        contentType: { type: string }
+      required: [name, size, contentType]
+    UploadResponse:
+      type: object
+      properties:
+        uploadURL: { type: string }
+        objectPath: { type: string }
+      required: [uploadURL, objectPath]
