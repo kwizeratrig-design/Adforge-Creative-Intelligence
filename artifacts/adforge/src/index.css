@@ -26,6 +26,26 @@ body {
   min-height: 100vh;
 }
 
+[data-testid='link-logo'] > span:first-child,
+[data-testid='link-landing-logo'] > span:first-child,
+a[href='/'] > span:first-child,
+a[href='/workspace'] > span:first-child,
+a[href='/brand-dna'] > span:first-child,
+a[href='/creative-lab'] > span:first-child {
+  background: #020817 url('/logo.svg?v=2') center / cover no-repeat !important;
+  background-color: #020817 !important;
+  color: transparent !important;
+}
+
+[data-testid='link-logo'] > span:first-child svg,
+[data-testid='link-landing-logo'] > span:first-child svg,
+a[href='/'] > span:first-child svg,
+a[href='/workspace'] > span:first-child svg,
+a[href='/brand-dna'] > span:first-child svg,
+a[href='/creative-lab'] > span:first-child svg {
+  display: none;
+}
+
 .grain {
   position: relative;
 }

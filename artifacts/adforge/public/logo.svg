@@ -1,4 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AdForge">
-  <rect width="64" height="64" rx="14" fill="#d7f36b"/>
-  <path d="M35.8 10 18 34.2h11.6L27.8 54 46 28.6H34.3L35.8 10Z" fill="#202215"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 430 430" role="img" aria-label="AdForge">
+  <defs>
+    <linearGradient id="blue" x1="121" y1="101" x2="249" y2="326" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#16A8FF"/>
+      <stop offset="1" stop-color="#1938D9"/>
+    </linearGradient>
+    <linearGradient id="orange" x1="307" y1="173" x2="180" y2="318" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFB512"/>
+      <stop offset="1" stop-color="#FF3C00"/>
+    </linearGradient>
+  </defs>
+  <rect width="430" height="430" rx="4" fill="#020817"/>
+  <path d="M225 102 120 239c-3 4 0 8 6 8h47l-17 80 93-112c4-5 1-7-5-7h-43l25-99c2-7 1-10-1-7Z" fill="url(#blue)" stroke="#020817" stroke-width="8" stroke-linejoin="round"/>
+  <path d="m219 170-22 42h47c6 0 8 4 4 9l-66 85c-5 7-2 13 4 15 3 1 6 0 9-2l108-70c8-5 10-13 7-21-1-4-4-7-8-10l-72-48c-4-3-8-3-11 0Z" fill="url(#orange)" stroke="#020817" stroke-width="8" stroke-linejoin="round"/>
 </svg>
