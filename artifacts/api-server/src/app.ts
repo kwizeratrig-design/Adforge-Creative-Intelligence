@@ -1,7 +1,5 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
-import type { IncomingMessage, ServerResponse } from "node:http";
-import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
 import { publishableKeyFromHost } from "@clerk/shared/keys";
 import router from "./routes";
@@ -19,26 +17,21 @@ const allowedOrigins = (process.env.CORS_ORIGINS || '')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
-app.use(
-  pinoHttp({
-    logger,
-    serializers: {
-      req(req: IncomingMessage) {
-        return {
-          id: req.id,
-          method: req.method,
-          url: req.url?.split("?")[0],
-        };
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const startedAt = Date.now();
+  res.on("finish", () => {
+    logger.info(
+      {
+        method: req.method,
+        url: req.originalUrl?.split("?")[0] ?? req.url,
+        statusCode: res.statusCode,
+        responseTime: Date.now() - startedAt,
       },
-      res(res: ServerResponse<IncomingMessage>) {
-        return {
-          statusCode: res.statusCode,
-        };
-      },
-    },
-  }),
-);
-app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
+      "request completed",
+    );
+  });
+  next();
+});app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use(
   cors({
     credentials: true,
