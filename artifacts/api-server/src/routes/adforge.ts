@@ -653,9 +653,18 @@ router.post("/creatives/generate", async (req, res) => {
   if (process.env.REPLICATE_API_TOKEN && process.env.OPENAI_API_KEY) {
     for (const value of values) {
       if (!value.previewUrl.startsWith("/api/storage")) continue;
-      const inspection = await inspectCreative({ imageUrl: String((value as any).__sourceUrl || ""), brand: await getUserBrand(getAuth(req).userId!), campaign, creative: value });
+      let inspection = await inspectCreative({ imageUrl: String((value as any).__sourceUrl || ""), brand: await getUserBrand(getAuth(req).userId!), campaign, creative: value });
       delete (value as any).__sourceUrl;
-      const passed = Boolean(inspection?.passed) && Number(inspection?.promptAdherence ?? 0) >= 80 && Number(inspection?.visualQuality ?? 0) >= 75;
+      let passed = Boolean(inspection?.passed) && Number(inspection?.promptAdherence ?? 0) >= 80 && Number(inspection?.visualQuality ?? 0) >= 75;
+      if (!passed && process.env.REPLICATE_API_TOKEN && inspection?.repairInstructions?.length) {
+        const repaired = await generateAndStoreReplicateImage({
+          prompt: `${value.creativeAngle}. ${value.headline}. ${value.bodyCopy}. No text in image. REPAIR ONLY THESE FAILURES: ${inspection.repairInstructions.join("; ")}`,
+          aspectRatio: value.aspectRatio,
+        });
+        value.previewUrl = repaired.previewUrl;
+        inspection = await inspectCreative({ imageUrl: repaired.sourceUrl, brand: await getUserBrand(getAuth(req).userId!), campaign, creative: value });
+        passed = Boolean(inspection?.passed) && Number(inspection?.promptAdherence ?? 0) >= 80 && Number(inspection?.visualQuality ?? 0) >= 75;
+      }
       value.status = passed ? "ready" : "needs_fix";
       value.readinessScore = Math.min(value.readinessScore, Math.round((Number(inspection?.promptAdherence ?? 0) + Number(inspection?.visualQuality ?? 0) + Number(inspection?.brandConsistency ?? 0)) / 3));
     }
