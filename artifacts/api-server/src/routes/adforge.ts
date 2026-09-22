@@ -572,7 +572,7 @@ router.get("/creatives", async (req, res) => {
   const campaignFilter = parsed.success && parsed.data.campaignId
     ? and(eq(campaignsTable.brandId, brand?.id ?? ''), eq(campaignsTable.id, parsed.data.campaignId))
     : brand ? eq(campaignsTable.brandId, brand.id) : undefined;
-  const creatives = await db
+  const creatives: Array<{ creative: any }> = await db
     .select({ creative: creativesTable })
     .from(creativesTable)
     .innerJoin(campaignsTable, eq(creativesTable.campaignId, campaignsTable.id))
@@ -597,11 +597,13 @@ router.post("/creatives/generate", async (req, res) => {
     return;
   }
   const concepts = await generateConcepts(getAuth(req).userId!, campaign.id);
-  const selected = parsed.data.conceptIds?.length ? concepts.filter((concept) => parsed.data.conceptIds?.includes(concept.id)) : concepts;
+  const selected: any[] = parsed.data.conceptIds?.length
+    ? concepts.filter((concept: any) => parsed.data.conceptIds?.includes(concept.id))
+    : concepts;
   const imageOffset = Math.floor(Math.random() * demoImages.length);
   const countToCreate = Math.min(parsed.data.count ?? selected.length * 3, 12);
   const timestamp = now();
-  const values = Array.from({ length: countToCreate }, (_, index) => {
+  const values = Array.from({ length: countToCreate }, (_, index: number) => {
     const concept = selected[index % Math.max(selected.length, 1)] ?? concepts[0];
     return {
       id: randomUUID(),
@@ -630,7 +632,7 @@ router.post("/creatives/generate", async (req, res) => {
   });
   if (process.env.REPLICATE_API_TOKEN) {
     for (const value of values) {
-      const concept = selected.find((item) => item.id === value.conceptId);
+      const concept = selected.find((item: { id: string }) => item.id === value.conceptId);
       const generatedImage = await generateAndStoreReplicateImage({
         prompt: `${concept?.visualDirection ?? value.creativeAngle}. ${value.headline}. ${value.bodyCopy}. No text in image.`,
         aspectRatio: value.aspectRatio,
@@ -695,12 +697,12 @@ router.post("/creatives/:creativeId/variations", async (req, res) => {
     res.status(404).json({ error: "Creative not found." });
     return;
   }
-  const options = [
+  const options: Array<[string, string, string, string]> = [
     ["Hook", "Upgrade your morning.", creative.headline, creative.cta],
     ["Headline", "Coffee worth waking up for.", creative.headline, creative.cta],
     ["CTA", creative.hook, creative.headline, "Try KORA today"],
   ];
-  const variations = options.map(([dimension, label, headline, cta], index) => ({
+  const variations = options.map(([dimension, label, headline, cta]: [string, string, string, string], index: number) => ({
     id: randomUUID(),
     creativeId: creative.id,
     dimension,
