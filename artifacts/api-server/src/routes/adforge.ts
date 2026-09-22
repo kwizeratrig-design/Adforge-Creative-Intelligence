@@ -31,6 +31,7 @@ import {
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
 import { generateAndStoreReplicateImage } from "../lib/replicate";
+import { generateCreativeConceptSet, inspectCreative } from "../lib/openai";
 import {
   brandAssetsTable,
   brandsTable,
@@ -321,6 +322,15 @@ async function generateConcepts(userId: string, campaignId: string) {
   if (existing.length) return existing;
 
   const timestamp = now();
+  const brand = await getUserBrand(userId);
+  const aiConcepts = await generateCreativeConceptSet({ brand, campaign });
+  if (aiConcepts?.length === 5) {
+    const generated = aiConcepts.map((concept) => ({
+      id: randomUUID(), campaignId, ...concept, creativeCount: 3, createdAt: timestamp, updatedAt: timestamp,
+    }));
+    await db.insert(creativeConceptsTable).values(generated as any);
+    return generated;
+  }
   const families = [
     ["Problem → Solution", "Show the audience tension, then make the product the obvious relief."],
     ["Product Hero", "Let the product carry the visual with a confident, premium treatment."],
@@ -636,6 +646,16 @@ router.post("/creatives/generate", async (req, res) => {
         aspectRatio: value.aspectRatio,
       });
       value.previewUrl = generatedImage.previewUrl;
+    }
+  }
+  // Quality gate: never mark a provider-backed image as final without inspection.
+  if (process.env.REPLICATE_API_TOKEN && process.env.OPENAI_API_KEY) {
+    for (const value of values) {
+      if (!value.previewUrl.startsWith("/api/storage")) continue;
+      const inspection = await inspectCreative({ imageUrl: new URL(value.previewUrl, `http://127.0.0.1:${process.env.PORT || "5000"}`).toString(), brand: await getUserBrand(getAuth(req).userId!), campaign, creative: value });
+      const passed = Boolean(inspection?.passed) && Number(inspection?.promptAdherence ?? 0) >= 80 && Number(inspection?.visualQuality ?? 0) >= 75;
+      value.status = passed ? "ready" : "needs_fix";
+      value.readinessScore = Math.min(value.readinessScore, Math.round((Number(inspection?.promptAdherence ?? 0) + Number(inspection?.visualQuality ?? 0) + Number(inspection?.brandConsistency ?? 0)) / 3));
     }
   }
   await db.insert(creativesTable).values(values);
