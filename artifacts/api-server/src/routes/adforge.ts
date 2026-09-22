@@ -646,13 +646,15 @@ router.post("/creatives/generate", async (req, res) => {
         aspectRatio: value.aspectRatio,
       });
       value.previewUrl = generatedImage.previewUrl;
+      (value as any).__sourceUrl = generatedImage.sourceUrl;
     }
   }
   // Quality gate: never mark a provider-backed image as final without inspection.
   if (process.env.REPLICATE_API_TOKEN && process.env.OPENAI_API_KEY) {
     for (const value of values) {
       if (!value.previewUrl.startsWith("/api/storage")) continue;
-      const inspection = await inspectCreative({ imageUrl: new URL(value.previewUrl, `http://127.0.0.1:${process.env.PORT || "5000"}`).toString(), brand: await getUserBrand(getAuth(req).userId!), campaign, creative: value });
+      const inspection = await inspectCreative({ imageUrl: String((value as any).__sourceUrl || ""), brand: await getUserBrand(getAuth(req).userId!), campaign, creative: value });
+      delete (value as any).__sourceUrl;
       const passed = Boolean(inspection?.passed) && Number(inspection?.promptAdherence ?? 0) >= 80 && Number(inspection?.visualQuality ?? 0) >= 75;
       value.status = passed ? "ready" : "needs_fix";
       value.readinessScore = Math.min(value.readinessScore, Math.round((Number(inspection?.promptAdherence ?? 0) + Number(inspection?.visualQuality ?? 0) + Number(inspection?.brandConsistency ?? 0)) / 3));
