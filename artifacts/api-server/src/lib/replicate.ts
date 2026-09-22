@@ -178,5 +178,6 @@ export async function generateAndStoreReplicateImage({
   return {
     previewUrl: `/api/storage${objectPath}`,
     objectPath,
+    sourceUrl: generatedUrl,
   };
 }
