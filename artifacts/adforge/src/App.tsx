@@ -7,33 +7,20 @@ import {
   useGetCurrentBrand,
   useCreateBrand,
   useUpdateCurrentBrand,
-  useListBrandAssets,
   useCreateBrandAsset,
-  useDeleteBrandAsset,
-  useRequestUploadUrl,
   useListCampaigns,
   getListCampaignsQueryKey,
   useCreateCampaign,
   useGetCampaign,
-  getGetCampaignQueryKey,
-  useUpdateCampaign,
   useListCampaignConcepts,
-  getListCampaignConceptsQueryKey,
   useGenerateCampaignConcepts,
   useListCreatives,
-  getListCreativesQueryKey,
   useGenerateCreatives,
-  useGetCreative,
-  getGetCreativeQueryKey,
-  useUpdateCreative,
-  useListCreativeVariations,
-  getListCreativeVariationsQueryKey,
-  useGenerateCreativeVariations,
   useGetCreativeIntelligence,
   setBaseUrl,
 } from '@workspace/api-client-react';
 import {
-  ArrowUpRight, BarChart3, ChevronRight, Heart, Home, Layers3, Lightbulb, Loader2, Menu,
+  ArrowUpRight, BarChart3, ChevronRight, Home, Layers3, Lightbulb, Loader2, Menu,
   Plus, Settings2, Sparkles, X, Zap,
 } from 'lucide-react';
 import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
@@ -140,7 +127,20 @@ function BrandDNA() {
   const [form, setForm] = useState<AnyRecord>({ name: '', website: '', description: '', industry: '', audience: '', personality: ['Bold'], visualStyle: 'Modern', typography: 'Clean sans', primaryColor: '#17352B', secondaryColors: ['#F3ECDD'], accentColor: '#D6F34A' });
   const set = (k: string, v: any) => setForm((c) => ({ ...c, [k]: v }));
   const save = () => {
-    const payload = { ...form, personality: Array.isArray(form.personality) ? form.personality : [String(form.personality || 'Bold')], secondaryColors: Array.isArray(form.secondaryColors) ? form.secondaryColors : [String(form.secondaryColors || '#F3ECDD')] };
+    const payload = {
+      name: String(form.name || '').trim(),
+      website: String(form.website || '').trim() || 'https://example.com',
+      description: String(form.description || '').trim() || form.name || 'Brand',
+      industry: String(form.industry || '').trim() || 'General',
+      audience: String(form.audience || '').trim() || 'General audience',
+      personality: Array.isArray(form.personality) ? form.personality.filter(Boolean) : [String(form.personality || 'Bold')],
+      visualStyle: String(form.visualStyle || '').trim() || 'Modern',
+      typography: String(form.typography || '').trim() || 'Clean sans',
+      primaryColor: String(form.primaryColor || '').trim() || '#17352B',
+      secondaryColors: Array.isArray(form.secondaryColors) ? form.secondaryColors.filter(Boolean) : [String(form.secondaryColors || '#F3ECDD')],
+      accentColor: String(form.accentColor || '').trim() || '#D6F34A',
+    };
+    if (!payload.name) return;
     if (existing?.id) updateBrand.mutate({ data: payload as any });
     else createBrand.mutate({ data: payload as any }, { onSuccess: () => brandQ.refetch() });
   };
@@ -152,7 +152,7 @@ function BrandDNA() {
           <label key={key} className="block text-sm text-[#9b9d89]">{key}<input className={cn(inputClass, 'mt-2')} value={form[key] || ''} onChange={(e) => set(key, e.target.value)} /></label>
         ))}
         <button className={buttonPrimary} onClick={save} disabled={createBrand.isPending || updateBrand.isPending || !form.name}>{(createBrand.isPending || updateBrand.isPending) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Save brand</button>
-        {(createBrand.isError || updateBrand.isError) && <Notice tone="error">Could not save brand. Check fields and try again.</Notice>}
+        {(createBrand.isError || updateBrand.isError) && <Notice tone="error">{String((createBrand.error as any)?.message || (createBrand.error as any)?.data?.error || (updateBrand.error as any)?.message || (updateBrand.error as any)?.data?.error || 'Could not save brand. Check fields and try again.')}</Notice>}
         {(createBrand.isSuccess || updateBrand.isSuccess) && <Notice>Brand saved. You can create campaigns now.</Notice>}
       </div>
     </div>
