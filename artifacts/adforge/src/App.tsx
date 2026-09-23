@@ -1,10 +1,13 @@
 import { type ReactNode, useState } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ClerkProvider, SignIn, SignUp, useAuth } from '@clerk/react';
-import { dark } from '@clerk/themes';
 import {
   useGetDashboard,
   useGetCurrentBrand,
+  useListBrandAssets,
+  useCreateBrandAsset,
+  useRequestUploadUrl,
+  getListBrandAssetsQueryKey,
   useCreateBrand,
   useUpdateCurrentBrand,
   useListCampaigns,
@@ -177,6 +180,28 @@ function Campaigns() {
   );
 }
 
+function CampaignAssetPicker({ selectedIds, onChange }: { selectedIds: string[]; onChange: (ids: string[]) => void }) {
+  const qc = useQueryClient();
+  const assetsQ = useListBrandAssets();
+  const requestUpload = useRequestUploadUrl();
+  const createAsset = useCreateBrandAsset();
+  const [uploading, setUploading] = useState(false);
+  const assets: AnyRecord[] = assetsQ.data || [];
+  const upload = async (file: File) => {
+    setUploading(true);
+    try {
+      const upload = await requestUpload.mutateAsync({ data: { name: file.name, size: file.size, contentType: file.type } });
+      await fetch(upload.uploadURL, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+      const asset = await createAsset.mutateAsync({ data: { name: file.name, type: file.type, objectPath: upload.objectPath, previewUrl: `${apiBaseUrl}/api/storage${upload.objectPath}`, tags: ['campaign-reference'] } });
+      onChange([...selectedIds, asset.id]);
+      qc.invalidateQueries({ queryKey: getListBrandAssetsQueryKey() });
+    } finally {
+      setUploading(false);
+    }
+  };
+  return <div className="border-t border-[#2b2e22] pt-5"><div className="flex items-start justify-between gap-4"><div><div className="font-mono-ui text-[10px] uppercase tracking-[.18em] text-[#9cad4b]">Supporting media</div><h3 className="mt-2 font-semibold">Give the image model something real.</h3><p className="mt-1 text-xs leading-5 text-[#747866]">Select a logo, product photo, or service image for this campaign.</p></div><label className={cn(buttonGhost, 'shrink-0 cursor-pointer')}><span>Upload media</span><input type="file" className="hidden" accept="image/png,image/jpeg,image/webp" disabled={uploading} onChange={(event) => event.target.files?.[0] && upload(event.target.files[0])} data-testid="input-campaign-media" /></label></div>{assets.length > 0 && <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-4">{assets.map((asset) => { const selected = selectedIds.includes(asset.id); return <button type="button" key={asset.id} className={cn('relative aspect-square overflow-hidden rounded-xl border', selected ? 'border-[#d7f36b] ring-2 ring-[#d7f36b]/30' : 'border-[#36392a]')} onClick={() => onChange(selected ? selectedIds.filter((id) => id !== asset.id) : [...selectedIds, asset.id])}><img src={asset.previewUrl} alt={asset.name} className="h-full w-full object-cover" />{selected && <span className="absolute right-2 top-2 rounded-full bg-[#d7f36b] px-1.5 text-xs text-[#202215]">✓</span>}</button>; })}</div>}</div>;
+}
+
 function CampaignCreate() {
   const [, setLocation] = useLocation();
   const qc = useQueryClient();
@@ -185,7 +210,7 @@ function CampaignCreate() {
   const [form, setForm] = useState<AnyRecord>({
     name: '', productName: '', description: '', productUrl: '', benefits: [''], price: '', offer: '', cta: 'Shop now',
     audience: '', ageRange: '25–44', location: '', interests: [''], painPoints: [''], desires: [''],
-    objective: 'Brand awareness', platform: 'Meta', format: 'Static image', aspectRatio: '1:1',
+    objective: 'Brand awareness', platform: 'Meta', format: 'Static image', aspectRatio: '1:1', assetIds: [],
   });
   const set = (k: string, v: any) => setForm((c) => ({ ...c, [k]: v }));
   const submit = () => {
@@ -211,6 +236,7 @@ function CampaignCreate() {
           <label className="block text-sm text-[#9b9d89]">Format<select className={cn(inputClass, 'mt-2')} value={form.format} onChange={(e) => set('format', e.target.value)}><option>Static image</option><option>Video</option><option>Carousel</option></select></label>
           <label className="block text-sm text-[#9b9d89]">Aspect ratio<select className={cn(inputClass, 'mt-2')} value={form.aspectRatio} onChange={(e) => set('aspectRatio', e.target.value)}><option>1:1</option><option>4:5</option><option>9:16</option><option>16:9</option></select></label>
         </div>
+        <CampaignAssetPicker selectedIds={form.assetIds} onChange={(assetIds) => set('assetIds', assetIds)} />
         <button className={buttonPrimary} onClick={submit} disabled={mutation.isPending || !form.name || !form.productName}>{mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpRight className="h-4 w-4" />}Create campaign</button>
         {mutation.isError && <Notice tone="error">{String((mutation.error as any)?.message || (mutation.error as any)?.data?.error || 'Could not create campaign.')}</Notice>}
       </div>
@@ -224,6 +250,7 @@ function CampaignDetail() {
   const id = location.split('/').pop()?.split('?')[0] || '';
   const campaignQ = useGetCampaign(id);
   const conceptsQ = useListCampaignConcepts(id);
+  const creativesQ = useListCreatives({ campaignId: id });
   const genConcepts = useGenerateCampaignConcepts();
   const genCreatives = useGenerateCreatives();
   const campaign = campaignQ.data as AnyRecord | undefined;
@@ -243,7 +270,7 @@ function CampaignDetail() {
             <button className={buttonGhost} disabled={genConcepts.isPending || !id} onClick={() => genConcepts.mutate({ campaignId: id }, { onSuccess: () => conceptsQ.refetch() })}>
               {genConcepts.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Generate concepts
             </button>
-            <button className={buttonPrimary} disabled={genCreatives.isPending || !id} onClick={() => genCreatives.mutate({ data: { campaignId: id } as any }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getListCreativesQueryKey() }); goLab(); } })}>
+            <button className={buttonPrimary} disabled={genCreatives.isPending || !id} onClick={() => genCreatives.mutate({ data: { campaignId: id } as any }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getListCreativesQueryKey({ campaignId: id }) }); } })}>
               {genCreatives.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Generate creatives
             </button>
           </div>
@@ -264,6 +291,7 @@ function CampaignDetail() {
       {!conceptsQ.isLoading && !(conceptsQ.data as any)?.length && (
         <EmptyState title="No concepts yet" body="Click Generate concepts to shape strategy territories for this campaign." />
       )}
+      {(creativesQ.data as AnyRecord[] | undefined)?.length ? <div className="mt-8"><h2 className="text-xl font-semibold">Generated creatives</h2><div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{(creativesQ.data as AnyRecord[]).map((creative) => <Link key={creative.id} href={`/creative-lab?campaignId=${id}`} className="overflow-hidden rounded-2xl border border-[#2b2e22] bg-[#1a1c16]"><img src={creative.previewUrl} alt={creative.headline} className="aspect-[4/5] w-full object-cover" /><div className="p-4"><p className="font-semibold">{creative.headline}</p><p className="mt-1 text-xs text-[#777a69]">{creative.conceptName}</p></div></Link>)}</div></div> : null}
     </div>
   );
 }
@@ -352,7 +380,7 @@ function ProtectedApp() {
 
 function ClerkApp() {
   return (
-    <ClerkProvider publishableKey={clerkPubKey} appearance={{ baseTheme: dark }}>
+    <ClerkProvider publishableKey={clerkPubKey}>
       <QueryClientProvider client={queryClient}>
         <Switch>
           <Route path="/" component={HomeRedirect} />

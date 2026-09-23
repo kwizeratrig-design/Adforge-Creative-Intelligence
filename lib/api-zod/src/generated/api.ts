@@ -46,6 +46,7 @@ export const GetDashboardResponse = zod.object({
   "platform": zod.string(),
   "format": zod.string(),
   "aspectRatio": zod.string(),
+  "assetIds": zod.array(zod.string()),
   "status": zod.string(),
   "isDemo": zod.boolean(),
   "createdAt": zod.string()
@@ -265,6 +266,7 @@ export const ListCampaignsResponseItem = zod.object({
   "platform": zod.string(),
   "format": zod.string(),
   "aspectRatio": zod.string(),
+  "assetIds": zod.array(zod.string()),
   "status": zod.string(),
   "isDemo": zod.boolean(),
   "createdAt": zod.string()
@@ -297,7 +299,8 @@ export const CreateCampaignBody = zod.object({
   "objective": zod.string(),
   "platform": zod.string(),
   "format": zod.string(),
-  "aspectRatio": zod.string()
+  "aspectRatio": zod.string(),
+  "assetIds": zod.array(zod.string())
 })
 
 export const CreateCampaignResponse = zod.object({
@@ -321,6 +324,7 @@ export const CreateCampaignResponse = zod.object({
   "platform": zod.string(),
   "format": zod.string(),
   "aspectRatio": zod.string(),
+  "assetIds": zod.array(zod.string()),
   "status": zod.string(),
   "isDemo": zod.boolean(),
   "createdAt": zod.string()
@@ -355,6 +359,7 @@ export const GetCampaignResponse = zod.object({
   "platform": zod.string(),
   "format": zod.string(),
   "aspectRatio": zod.string(),
+  "assetIds": zod.array(zod.string()),
   "status": zod.string(),
   "isDemo": zod.boolean(),
   "createdAt": zod.string()
@@ -390,7 +395,8 @@ export const UpdateCampaignBody = zod.object({
   "objective": zod.string(),
   "platform": zod.string(),
   "format": zod.string(),
-  "aspectRatio": zod.string()
+  "aspectRatio": zod.string(),
+  "assetIds": zod.array(zod.string())
 })
 
 export const UpdateCampaignResponse = zod.object({
@@ -414,6 +420,7 @@ export const UpdateCampaignResponse = zod.object({
   "platform": zod.string(),
   "format": zod.string(),
   "aspectRatio": zod.string(),
+  "assetIds": zod.array(zod.string()),
   "status": zod.string(),
   "isDemo": zod.boolean(),
   "createdAt": zod.string()

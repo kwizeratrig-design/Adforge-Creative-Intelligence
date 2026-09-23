@@ -95,11 +95,24 @@ async function wait(milliseconds: number) {
 export async function generateAndStoreReplicateImage({
   prompt,
   aspectRatio: ratio,
+  referenceImages = [],
 }: {
   prompt: string;
   aspectRatio: string;
+  referenceImages?: string[];
 }) {
   const { owner, name } = modelParts();
+  const input: Record<string, unknown> = {
+    prompt,
+    aspect_ratio: aspectRatio(ratio),
+    num_outputs: 1,
+    output_format: "jpg",
+    output_quality: 90,
+  };
+  const imageInputField = process.env.REPLICATE_IMAGE_INPUT_FIELD;
+  if (imageInputField && referenceImages[0]) {
+    input[imageInputField] = referenceImages[0];
+  }
   let prediction = await replicateRequest<ReplicatePrediction>(
     `/v1/models/${owner}/${name}/predictions`,
     {
@@ -108,15 +121,7 @@ export async function generateAndStoreReplicateImage({
         "Content-Type": "application/json",
         Prefer: "wait=60",
       },
-      body: JSON.stringify({
-        input: {
-          prompt,
-          aspect_ratio: aspectRatio(ratio),
-          num_outputs: 1,
-          output_format: "jpg",
-          output_quality: 90,
-        },
-      }),
+      body: JSON.stringify({ input }),
     },
   );
 

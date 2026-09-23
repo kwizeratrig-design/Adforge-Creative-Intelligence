@@ -28,6 +28,7 @@ Deploy `artifacts/api-server` with the workspace packages available. The API nee
 - `CLERK_SECRET_KEY`
 - `REPLICATE_API_TOKEN`
 - `REPLICATE_MODEL`
+- `REPLICATE_IMAGE_INPUT_FIELD` (set to the image input field used by an image-to-image Replicate model, such as `input_image`)
 - `GOOGLE_CLOUD_PROJECT`
 - `GOOGLE_APPLICATION_CREDENTIALS` or workload identity
 - `PUBLIC_OBJECT_SEARCH_PATHS`

@@ -69,6 +69,7 @@ export const campaignsTable = pgTable("adforge_campaigns", {
   platform: text("platform").notNull(),
   format: text("format").notNull(),
   aspectRatio: text("aspect_ratio").notNull(),
+  assetIds: jsonb("asset_ids").$type<string[]>().notNull().default([]),
   status: text("status").notNull().default("draft"),
   isDemo: boolean("is_demo").notNull().default(false),
   ...timestamps,

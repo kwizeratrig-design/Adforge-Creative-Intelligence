@@ -9,6 +9,7 @@ import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from '../lib/objectStorage';
+import { logger } from '../lib/logger';
 import { getAuth } from '@clerk/express';
 
 const router: IRouter = Router();
@@ -66,7 +67,7 @@ router.post(
         }),
       );
     } catch (error) {
-      req.log.error({ err: error }, 'Error generating upload URL');
+      logger.error({ err: error }, 'Error generating upload URL');
       res.status(500).json({ error: 'Failed to generate upload URL' });
     }
   },
@@ -105,7 +106,7 @@ router.get(
         res.end();
       }
     } catch (error) {
-      req.log.error({ err: error }, 'Error serving public object');
+      logger.error({ err: error }, 'Error serving public object');
       res.status(500).json({ error: 'Failed to serve public object' });
     }
   },
@@ -145,11 +146,11 @@ router.get('/storage/objects/*path', async (req: Request, res: Response) => {
     }
   } catch (error) {
     if (error instanceof ObjectNotFoundError) {
-      req.log.warn({ err: error }, 'Object not found');
+      logger.warn({ err: error }, 'Object not found');
       res.status(404).json({ error: 'Object not found' });
       return;
     }
-    req.log.error({ err: error }, 'Error serving object');
+    logger.error({ err: error }, 'Error serving object');
     res.status(500).json({ error: 'Failed to serve object' });
   }
 });

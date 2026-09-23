@@ -482,10 +482,13 @@ components:
         platform: { type: string }
         format: { type: string }
         aspectRatio: { type: string }
+        assetIds:
+          type: array
+          items: { type: string }
         status: { type: string }
         isDemo: { type: boolean }
         createdAt: { type: string }
-      required: [id, brandId, name, productName, description, productUrl, benefits, price, offer, cta, audience, ageRange, location, interests, painPoints, desires, objective, platform, format, aspectRatio, status, isDemo, createdAt]
+      required: [id, brandId, name, productName, description, productUrl, benefits, price, offer, cta, audience, ageRange, location, interests, painPoints, desires, objective, platform, format, aspectRatio, assetIds, status, isDemo, createdAt]
     CampaignInput:
       type: object
       properties:
@@ -515,7 +518,10 @@ components:
         platform: { type: string }
         format: { type: string }
         aspectRatio: { type: string }
-      required: [name, productName, description, productUrl, benefits, cta, audience, ageRange, location, interests, painPoints, desires, objective, platform, format, aspectRatio]
+        assetIds:
+          type: array
+          items: { type: string }
+      required: [name, productName, description, productUrl, benefits, cta, audience, ageRange, location, interests, painPoints, desires, objective, platform, format, aspectRatio, assetIds]
     CampaignUpdate:
       allOf:
         - $ref: "#/components/schemas/CampaignInput"

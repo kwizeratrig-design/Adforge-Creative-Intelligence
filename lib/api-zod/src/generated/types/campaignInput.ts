@@ -29,4 +29,5 @@ export interface CampaignInput {
   platform: string;
   format: string;
   aspectRatio: string;
+  assetIds: string[];
 }

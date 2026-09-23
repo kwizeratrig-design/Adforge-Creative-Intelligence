@@ -94,6 +94,7 @@ export interface Campaign {
   platform: string;
   format: string;
   aspectRatio: string;
+  assetIds: string[];
   status: string;
   isDemo: boolean;
   createdAt: string;
@@ -122,6 +123,7 @@ export interface CampaignInput {
   platform: string;
   format: string;
   aspectRatio: string;
+  assetIds: string[];
 }
 
 export type CampaignUpdate = CampaignInput;

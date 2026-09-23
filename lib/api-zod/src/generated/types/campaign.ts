@@ -29,6 +29,7 @@ export interface Campaign {
   platform: string;
   format: string;
   aspectRatio: string;
+  assetIds: string[];
   status: string;
   isDemo: boolean;
   createdAt: string;
