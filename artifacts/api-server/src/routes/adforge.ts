@@ -63,6 +63,42 @@ function requireAuth(req: Request, res: Response, next: () => void) {
   next();
 }
 
+function serializeBrand(brand: {
+  id: string;
+  name: string;
+  website: string;
+  description: string;
+  industry: string;
+  audience: string;
+  personality: string[];
+  visualStyle: string;
+  typography: string;
+  primaryColor: string;
+  secondaryColors: string[];
+  accentColor: string;
+  logoPath: string | null;
+  isDemo: boolean;
+  updatedAt: Date | string;
+}) {
+  return {
+    id: brand.id,
+    name: brand.name,
+    website: brand.website,
+    description: brand.description,
+    industry: brand.industry,
+    audience: brand.audience,
+    personality: brand.personality,
+    visualStyle: brand.visualStyle,
+    typography: brand.typography,
+    primaryColor: brand.primaryColor,
+    secondaryColors: brand.secondaryColors,
+    accentColor: brand.accentColor,
+    logoPath: brand.logoPath ?? null,
+    isDemo: brand.isDemo,
+    updatedAt: brand.updatedAt instanceof Date ? brand.updatedAt.toISOString() : String(brand.updatedAt),
+  };
+}
+
 async function getUserBrand(userId: string) {
   const [userBrand] = await db
     .select()
@@ -242,13 +278,17 @@ router.get("/dashboard", async (req, res) => {
 
 router.get("/brands/current", async (req, res) => {
   const brand = await getUserBrand(getAuth(req).userId!);
-  res.json(GetCurrentBrandResponse.parse(brand ?? null));
+  if (!brand) {
+    res.json(null);
+    return;
+  }
+  res.json(GetCurrentBrandResponse.parse(serializeBrand(brand)));
 });
 
 router.post("/brands/current", async (req, res) => {
   const parsed = CreateBrandBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "Invalid brand details." });
+    res.status(400).json({ error: "Invalid brand details.", details: parsed.error.flatten() });
     return;
   }
   const timestamp = now();
@@ -262,7 +302,7 @@ router.post("/brands/current", async (req, res) => {
     updatedAt: timestamp,
   };
   await db.insert(brandsTable).values(brand);
-  res.status(201).json(CreateBrandResponse.parse(brand));
+  res.status(201).json(CreateBrandResponse.parse(serializeBrand(brand)));
 });
 
 router.patch("/brands/current", async (req, res) => {
@@ -273,7 +313,7 @@ router.patch("/brands/current", async (req, res) => {
   }
   const parsed = CreateBrandBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "Invalid brand details." });
+    res.status(400).json({ error: "Invalid brand details.", details: parsed.error.flatten() });
     return;
   }
   const [updated] = await db
@@ -281,7 +321,7 @@ router.patch("/brands/current", async (req, res) => {
     .set({ ...parsed.data, updatedAt: now() })
     .where(and(eq(brandsTable.id, current.id), eq(brandsTable.ownerId, getAuth(req).userId!)))
     .returning();
-  res.json(GetCurrentBrandResponse.parse(updated));
+  res.json(GetCurrentBrandResponse.parse(serializeBrand(updated)));
 });
 
 router.get("/brands/assets", async (req, res) => {
