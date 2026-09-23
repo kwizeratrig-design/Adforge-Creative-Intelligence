@@ -16,6 +16,10 @@ await esbuild({
   logLevel: "info",
   external: ["*.node", "sharp", "better-sqlite3", "sqlite3", "pg-native", "fsevents"],
   sourcemap: false,
+  // Vercel expects module.exports = expressApp
+  footer: {
+    js: "\nif (module.exports && module.exports.default) { module.exports = module.exports.default; }\n",
+  },
 });
 
 console.log("API serverless bundle ->", outfile);
