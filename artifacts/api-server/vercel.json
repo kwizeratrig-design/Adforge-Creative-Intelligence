@@ -1,7 +1,18 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "express",
+  "framework": null,
   "installCommand": "cd ../.. && pnpm install",
   "buildCommand": "pnpm run build",
-  "outputDirectory": null
+  "functions": {
+    "api/index.mjs": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api"
+    }
+  ]
 }
