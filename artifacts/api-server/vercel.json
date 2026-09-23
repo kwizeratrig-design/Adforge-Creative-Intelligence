@@ -4,6 +4,13 @@
   "buildCommand": "pnpm run build",
   "outputDirectory": "public",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/api" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/api"
+    }
   ]
 }
