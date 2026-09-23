@@ -374,7 +374,12 @@ router.post("/campaigns", async (req, res) => {
     updatedAt: timestamp,
   };
   await db.insert(campaignsTable).values(campaign);
-  res.status(201).json(CreateCampaignResponse.parse(campaign));
+  res.status(201).json(
+    CreateCampaignResponse.parse({
+      ...campaign,
+      createdAt: campaign.createdAt.toISOString(),
+    }),
+  );
 });
 
 router.get("/campaigns/:campaignId", async (req, res) => {
