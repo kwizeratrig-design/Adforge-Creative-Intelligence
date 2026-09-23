@@ -1,10 +1,17 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "corepack enable && corepack prepare pnpm@9.15.4 --activate && cd ../.. && pnpm install --no-frozen-lockfile",
-  "rewrites": [
+  "buildCommand": "pnpm run build",
+  "builds": [
     {
-      "source": "/(.*)",
-      "destination": "/src/index.ts"
+      "src": "dist/index.mjs",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "dist/index.mjs"
     }
   ]
 }
