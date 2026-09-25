@@ -16,11 +16,7 @@
   ],
   "functions": {
     "api/index.js": {
-      "maxDuration": 120,
-      "memory": 1024
-    },
-    "api/index.ts": {
-      "maxDuration": 120,
+      "maxDuration": 60,
       "memory": 1024
     }
   }
