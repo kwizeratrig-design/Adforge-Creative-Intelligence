@@ -345,19 +345,66 @@ router.patch("/brands/current", async (req, res) => {
 });
 
 router.get("/brands/assets", async (req, res) => {
-  const brand = await getUserBrand(getAuth(req).userId!);
-  const assets = brand ? await db.select().from(brandAssetsTable).where(eq(brandAssetsTable.brandId, brand.id)).orderBy(desc(brandAssetsTable.createdAt)) : [];
-  res.json(ListBrandAssetsResponse.parse(assets));
+  try {
+    const brand = await getUserBrand(getAuth(req).userId!);
+    const assets = brand ? await db.select().from(brandAssetsTable).where(eq(brandAssetsTable.brandId, brand.id)).orderBy(desc(brandAssetsTable.createdAt)) : [];
+    res.json(assets.map((a) => ({
+      ...a,
+      objectPath: a.objectPath ?? null,
+      tags: Array.isArray(a.tags) ? a.tags : [],
+      isFavorite: Boolean(a.isFavorite),
+      isDemo: Boolean(a.isDemo),
+      createdAt: a.createdAt instanceof Date ? a.createdAt.toISOString() : String(a.createdAt),
+    })));
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err?.message || "Failed to list assets." });
+  }
 });
 
 router.post("/brands/assets", async (req, res) => {
-  const parsed = CreateBrandAssetBody.safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: "Invalid asset details." }); return; }
-  const brand = await getUserBrand(getAuth(req).userId!);
-  if (!brand) { res.status(404).json({ error: "Create a brand first." }); return; }
-  const asset = { id: randomUUID(), brandId: brand.id, ...parsed.data, objectPath: parsed.data.objectPath ?? null, tags: parsed.data.tags ?? [], isFavorite: false, isDemo: false, createdAt: now(), updatedAt: now() };
-  await db.insert(brandAssetsTable).values(asset);
-  res.status(201).json(CreateBrandAssetResponse.parse(asset));
+  try {
+    const parsed = CreateBrandAssetBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid asset details.", details: parsed.error.flatten() });
+      return;
+    }
+    const brand = await getUserBrand(getAuth(req).userId!);
+    if (!brand) {
+      res.status(404).json({ error: "Create a brand first." });
+      return;
+    }
+    const timestamp = now();
+    const asset = {
+      id: randomUUID(),
+      brandId: brand.id,
+      name: parsed.data.name,
+      type: parsed.data.type || "image",
+      objectPath: parsed.data.objectPath ?? null,
+      previewUrl: parsed.data.previewUrl,
+      tags: Array.isArray(parsed.data.tags) ? parsed.data.tags : [],
+      isFavorite: false,
+      isDemo: false,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    await db.insert(brandAssetsTable).values(asset);
+    res.status(201).json({
+      id: asset.id,
+      brandId: asset.brandId,
+      name: asset.name,
+      type: asset.type,
+      objectPath: asset.objectPath,
+      previewUrl: asset.previewUrl,
+      tags: asset.tags,
+      isFavorite: asset.isFavorite,
+      isDemo: asset.isDemo,
+      createdAt: timestamp.toISOString(),
+    });
+  } catch (err: any) {
+    console.error("Create brand asset failed:", err);
+    res.status(500).json({ error: err?.message || "Failed to save asset." });
+  }
 });
 
 router.delete("/brands/assets/:assetId", async (req, res) => {
@@ -414,11 +461,11 @@ router.post("/campaigns", async (req, res) => {
       description: parsed.data.description || "",
       productUrl: parsed.data.productUrl || "https://example.com",
       benefits: parsed.data.benefits ?? [],
-      price: parsed.data.price ?? null,
-      offer: parsed.data.offer ?? null,
+      price: parsed.data.price || null,
+      offer: parsed.data.offer || null,
       cta: parsed.data.cta || "Shop now",
       audience: parsed.data.audience || "",
-      ageRange: parsed.data.ageRange || "25–44",
+      ageRange: parsed.data.ageRange || "25-44",
       location: parsed.data.location || "",
       interests: parsed.data.interests ?? [],
       painPoints: parsed.data.painPoints ?? [],
@@ -444,14 +491,14 @@ router.post("/campaigns", async (req, res) => {
 router.get("/campaigns/:campaignId", async (req, res) => {
   const campaign = await getUserCampaign(getAuth(req).userId!, req.params.campaignId);
   if (!campaign) { res.status(404).json({ error: "Campaign not found." }); return; }
-  res.json(GetCampaignResponse.parse(serializeCampaign(campaign)));
+  res.json(serializeCampaign(campaign));
 });
 
 router.get("/campaigns/:campaignId/concepts", async (req, res) => {
   const campaign = await getUserCampaign(getAuth(req).userId!, req.params.campaignId);
   if (!campaign) { res.status(404).json({ error: "Campaign not found." }); return; }
   const concepts: any[] = await generateConcepts(getAuth(req).userId!, campaign.id);
-  res.json(ListCampaignConceptsResponse.parse(concepts));
+  res.json(concepts);
 });
 
 router.post("/campaigns/:campaignId/concepts/generate", async (req, res) => {
@@ -459,14 +506,14 @@ router.post("/campaigns/:campaignId/concepts/generate", async (req, res) => {
   if (!campaign) { res.status(404).json({ error: "Campaign not found." }); return; }
   await db.delete(creativeConceptsTable).where(eq(creativeConceptsTable.campaignId, campaign.id));
   const concepts: any[] = await generateConcepts(getAuth(req).userId!, campaign.id);
-  res.json(GenerateCampaignConceptsResponse.parse(concepts));
+  res.json(concepts);
 });
 
 router.post("/campaigns/:campaignId/creatives/generate", async (req, res) => {
   try {
     const result = await generateCreativesForCampaign(getAuth(req).userId!, req.params.campaignId);
     if (result.error) { res.status(result.status).json({ error: result.error }); return; }
-    res.status(201).json(GenerateCreativesResponse.parse(result.creatives!.map(serializeCreative)));
+    res.status(201).json((result.creatives || []).map(serializeCreative));
   } catch (err: any) {
     console.error(err);
     res.status(500).json({ error: err?.message || "Failed to generate creatives." });
@@ -479,7 +526,7 @@ router.post("/creatives/generate", async (req, res) => {
     if (!parsed.success) { res.status(400).json({ error: "campaignId is required." }); return; }
     const result = await generateCreativesForCampaign(getAuth(req).userId!, parsed.data.campaignId, parsed.data.conceptIds);
     if (result.error) { res.status(result.status).json({ error: result.error }); return; }
-    res.status(201).json(GenerateCreativesResponse.parse(result.creatives!.map(serializeCreative)));
+    res.status(201).json((result.creatives || []).map(serializeCreative));
   } catch (err: any) {
     console.error(err);
     res.status(500).json({ error: err?.message || "Failed to generate creatives." });
@@ -491,13 +538,13 @@ router.get("/creatives", async (req, res) => {
   if (!brand) { res.json([]); return; }
   const campaignId = typeof req.query.campaignId === "string" ? req.query.campaignId : undefined;
   const rows = await db.select().from(creativesTable).innerJoin(campaignsTable, eq(creativesTable.campaignId, campaignsTable.id)).where(and(eq(campaignsTable.brandId, brand.id), campaignId ? eq(creativesTable.campaignId, campaignId) : undefined)).orderBy(desc(creativesTable.createdAt));
-  res.json(ListCreativesResponse.parse(rows.map((r: any) => serializeCreative(r.creatives ?? r.creative ?? r))));
+  res.json(rows.map((r: any) => serializeCreative(r.creatives ?? r.creative ?? r)));
 });
 
 router.get("/creatives/:creativeId", async (req, res) => {
   const creative = await getUserCreative(getAuth(req).userId!, req.params.creativeId);
   if (!creative) { res.status(404).json({ error: "Creative not found." }); return; }
-  res.json(GetCreativeResponse.parse(serializeCreative(creative)));
+  res.json(serializeCreative(creative));
 });
 
 router.patch("/creatives/:creativeId", async (req, res) => {
@@ -506,11 +553,11 @@ router.patch("/creatives/:creativeId", async (req, res) => {
   const parsed = UpdateCreativeBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Invalid creative update." }); return; }
   const [updated] = await db.update(creativesTable).set({ ...parsed.data, updatedAt: now() }).where(eq(creativesTable.id, creative.id)).returning();
-  res.json(UpdateCreativeResponse.parse(serializeCreative(updated)));
+  res.json(serializeCreative(updated));
 });
 
 router.get("/intelligence", async (_req, res) => {
-  res.json(GetCreativeIntelligenceResponse.parse({ recommendations: ["Lead with product-hero concepts for higher scroll-stop.", "Keep one primary CTA per creative.", "Test 2–3 variations of hooks and headlines."] }));
+  res.json({ recommendations: ["Lead with product-hero concepts for higher scroll-stop.", "Keep one primary CTA per creative.", "Test 2–3 variations of hooks and headlines."] });
 });
 
 export default router;
