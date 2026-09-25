@@ -270,7 +270,7 @@ function CampaignDetail() {
           </div>
         }
       />
-      {genCreatives.isPending && <Notice>Generating AI images with Replicate — this can take 30–90 seconds. Keep this tab open.</Notice>}
+      {genCreatives.isPending && <Notice>Generating AI images — keep this tab open (~20–40s).</Notice>}
       {genCreatives.isError && <Notice tone="error">{String((genCreatives.error as any)?.message || (genCreatives.error as any)?.data?.error || 'Could not generate creatives.')}</Notice>}
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
         {((conceptsQ.data || []) as AnyRecord[]).map((c) => (
@@ -294,23 +294,45 @@ function CreativeLab() {
   const conceptId = params.get('conceptId') || '';
   const list = useListCreatives(campaignId ? { campaignId } : undefined);
   const all = (list.data || []) as AnyRecord[];
-  const creatives = conceptId ? all.filter((c) => c.conceptId === conceptId) : all;
+  const filtered = conceptId ? all.filter((c) => c.conceptId === conceptId) : all;
+  const creatives = filtered.length ? filtered : all;
   return (
     <div className="mx-auto max-w-[1260px]">
-      <PageHeading eyebrow="Creative lab" title="The good stuff, in one place." body={conceptId ? 'Creatives for the selected concept.' : campaignId ? 'Creatives for this campaign.' : 'Creatives generated from your campaigns.'} action={<Link href="/campaigns/new" className={buttonPrimary}><Plus className="h-4 w-4" />New campaign</Link>} />
+      <PageHeading eyebrow="Creative lab" title="The good stuff, in one place." body={conceptId ? 'Creatives for the selected concept.' : campaignId ? 'Creatives for this campaign.' : 'Feed-ready ads generated from your campaigns.'} action={<Link href="/campaigns/new" className={buttonPrimary}><Plus className="h-4 w-4" />New campaign</Link>} />
       {list.isLoading && <p className="text-sm text-[#9b9d89]">Loading creatives…</p>}
       {!list.isLoading && creatives.length === 0 && (
         <EmptyState title="No creatives yet" body="Open a campaign and click Generate creatives. AI images can take up to a minute." action={campaignId ? <Link href={`/campaigns/${campaignId}`} className={buttonPrimary}>Back to campaign</Link> : <Link href="/campaigns" className={buttonPrimary}>View campaigns</Link>} />
       )}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {creatives.map((c) => (
-          <div key={c.id} className="overflow-hidden rounded-2xl border border-[#2b2e22] bg-[#1a1c16]">
-            {c.previewUrl && <img src={c.previewUrl} alt="" className="aspect-[4/5] w-full object-cover" />}
-            <div className="p-4">
-              <div className="text-xs text-[#d7f36b]">{c.family}{c.status === 'ai_generated' ? ' · AI' : ''}</div>
-              <h3 className="mt-1 font-semibold">{c.headline}</h3>
-              <p className="mt-1 text-sm text-[#9b9d89]">{c.hook}</p>
-              <p className="mt-2 text-xs text-[#777a69]">{c.conceptName}</p>
+          <div key={c.id} className="overflow-hidden rounded-2xl border border-[#2b2e22] bg-[#0e0f0c] shadow-[0_20px_50px_rgba(0,0,0,.35)]">
+            <div className="relative aspect-[4/5] w-full overflow-hidden bg-[#151712]">
+              {c.previewUrl ? (
+                <img src={c.previewUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+              ) : null}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-black/10" />
+              <div className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/40 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[.12em] text-white/90 backdrop-blur">
+                {c.platform || 'Meta'} · {c.format || 'Feed'}
+              </div>
+              <div className="absolute inset-x-0 bottom-0 p-4">
+                <p className="text-[11px] font-medium uppercase tracking-[.14em] text-[#d7f36b]">{c.family || 'Concept'}</p>
+                <h3 className="mt-1 text-xl font-semibold leading-tight tracking-[-.02em] text-white drop-shadow">
+                  {c.headline || 'Your offer, clearly stated.'}
+                </h3>
+                {c.hook ? <p className="mt-1.5 line-clamp-2 text-sm text-white/80">{c.hook}</p> : null}
+                <div className="mt-3 inline-flex items-center rounded-full bg-[#d7f36b] px-4 py-2 text-sm font-semibold text-[#1a1c12]">
+                  {c.cta || 'Learn more'}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-[#2b2e22] px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-xs text-[#9b9d89]">{c.conceptName || 'Campaign creative'}</p>
+                <p className="mt-0.5 text-[10px] uppercase tracking-[.14em] text-[#5c5f50]">
+                  {c.status === 'ai_generated' ? 'AI creative' : 'Draft'} · Ready for export
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full border border-[#3a3d2b] px-2 py-1 text-[10px] text-[#c8cbb4]">{c.aspectRatio || '4:5'}</span>
             </div>
           </div>
         ))}
@@ -344,7 +366,7 @@ function SettingsPage() {
           <div className="text-xs text-[#777a69]">Signed in as</div>
           <p className="mt-1 text-sm font-medium">{user?.primaryEmailAddress?.emailAddress || user?.fullName || 'Account'}</p>
         </div>
-        <Notice>Studio is live. AI images use Replicate when REPLICATE_API_TOKEN is set.</Notice>
+        <Notice>Studio is live. Creatives are rendered as feed-ready ads (image + headline + CTA).</Notice>
         <button type="button" className={buttonGhost} onClick={handleSignOut}>
           <LogOut className="h-4 w-4" />
           Sign out
