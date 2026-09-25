@@ -164,23 +164,32 @@ function buildCreativePrompt(brand: any, campaign: any, concept: any, variationI
   const colors = [brand?.primaryColor, brand?.accentColor, ...(brand?.secondaryColors || [])].filter(Boolean).join(", ");
   const personality = Array.isArray(brand?.personality) ? brand.personality.join(", ") : "premium";
   const variationHints = [
-    "hero product shot, centered, premium lighting",
-    "lifestyle scene with product in natural use context",
-    "bold graphic composition with strong negative space",
+    "hero exterior or signature space, centered composition, premium golden-hour lighting",
+    "lifestyle guest experience moment, natural candid commercial photography",
+    "bold editorial composition with strong negative space and one focal subject",
   ];
   return [
-    `Professional advertising creative for ${campaign.platform}.`,
-    `Brand: ${brand?.name || campaign.productName}. Product: ${campaign.productName}.`,
+    `Award-winning advertising photograph for a ${campaign.platform} static ad.`,
+    `This is an ad for "${brand?.name || campaign.productName}" — product/offer: ${campaign.productName}.`,
     brand?.description ? `Brand story: ${brand.description}.` : "",
-    `Industry: ${brand?.industry || "hospitality"}. Visual style: ${brand?.visualStyle || "modern"}.`,
-    `Brand colors: ${colors || "deep green and warm cream"}. Personality: ${personality}.`,
-    `Concept family: ${concept.family}. Angle: ${concept.angle}.`,
-    `Visual direction: ${concept.visualDirection}.`,
-    `Emotion: ${concept.emotion}. Audience: ${campaign.audience}.`,
-    campaign.location ? `Location context: ${campaign.location}.` : "",
+    campaign.description ? `Campaign brief: ${campaign.description}.` : "",
+    `Industry: ${brand?.industry || "hospitality"}. Visual style: ${brand?.visualStyle || "modern boutique"}.`,
+    `Brand color palette influence: ${colors || "warm earth tones and soft neutrals"}. Personality: ${personality}.`,
+    `Creative concept: ${concept.family}. Angle: ${concept.angle}.`,
+    concept.visualDirection ? `Scene direction: ${concept.visualDirection}.` : "",
+    `Emotion to convey: ${concept.emotion}. Target audience: ${campaign.audience}.`,
+    campaign.location ? `Location must feel authentic to: ${campaign.location}.` : "",
     variationHints[variationIndex % variationHints.length],
-    "Photorealistic, high-end commercial photography, sharp detail, no text overlay, no watermark.",
+    "Photorealistic high-end commercial photography, sharp detail, cinematic lighting.",
+    "Absolutely no text, no logos, no watermarks, no UI chrome, no stock-photo look.",
   ].filter(Boolean).join(" ");
+}
+
+/** Free prompt-locked image when paid providers are out of credits — still on-brief. */
+function freePromptImageUrl(prompt: string, seed: number) {
+  const clean = prompt.replace(/\s+/g, " ").trim().slice(0, 400);
+  const encoded = encodeURIComponent(clean);
+  return `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&nologo=true&seed=${seed}&model=flux`;
 }
 
 async function generateCreativesForCampaign(userId: string, campaignId: string, conceptIds?: string[]) {
@@ -253,9 +262,20 @@ async function generateCreativesForCampaign(userId: string, campaignId: string, 
       }
     }
 
+    // Last resort: free prompt-locked image so the lab never shows random stock.
+    if (!generatedUrl) {
+      try {
+        const seed = Math.floor(Math.random() * 1_000_000) + conceptIndex;
+        generatedUrl = freePromptImageUrl(prompt, seed);
+        creative.status = "ai_generated";
+      } catch {
+        creative.status = "placeholder";
+      }
+    }
+
     if (generatedUrl) {
       creative.previewUrl = generatedUrl;
-      creative.status = "ai_generated";
+      if (creative.status !== "ai_generated") creative.status = "ai_generated";
     } else {
       creative.status = "placeholder";
     }
