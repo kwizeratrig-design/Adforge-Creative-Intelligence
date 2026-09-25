@@ -88,6 +88,12 @@ function serializeCampaign(campaign: any) {
     ...campaign,
     price: campaign.price ?? null,
     offer: campaign.offer ?? null,
+    assetIds: Array.isArray(campaign.assetIds) ? campaign.assetIds : [],
+    isDemo: Boolean(campaign.isDemo),
+    benefits: Array.isArray(campaign.benefits) ? campaign.benefits : [],
+    interests: Array.isArray(campaign.interests) ? campaign.interests : [],
+    painPoints: Array.isArray(campaign.painPoints) ? campaign.painPoints : [],
+    desires: Array.isArray(campaign.desires) ? campaign.desires : [],
     createdAt: campaign.createdAt instanceof Date ? campaign.createdAt.toISOString() : String(campaign.createdAt ?? ""),
   };
 }
@@ -368,33 +374,71 @@ router.get("/campaigns", async (req, res) => {
 });
 
 router.post("/campaigns", async (req, res) => {
-  const parsed = CreateCampaignBody.safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: "Invalid campaign details.", details: parsed.error.flatten() }); return; }
-  let brand = await getUserBrand(getAuth(req).userId!);
-  if (!brand) {
+  try {
+    const parsed = CreateCampaignBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid campaign details.", details: parsed.error.flatten() });
+      return;
+    }
+    let brand = await getUserBrand(getAuth(req).userId!);
+    if (!brand) {
+      const timestamp = now();
+      brand = {
+        id: randomUUID(),
+        ownerId: getAuth(req).userId!,
+        name: parsed.data.productName || parsed.data.name || "My Brand",
+        website: parsed.data.productUrl || "https://example.com",
+        description: parsed.data.description || "Brand created with first campaign.",
+        industry: "General",
+        audience: parsed.data.audience || "General audience",
+        personality: ["Confident"],
+        visualStyle: "Modern",
+        typography: "Clean sans",
+        primaryColor: "#17352B",
+        secondaryColors: ["#F3ECDD"],
+        accentColor: "#D6F34A",
+        logoPath: null,
+        isDemo: false,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      await db.insert(brandsTable).values(brand);
+    }
     const timestamp = now();
-    brand = { id: randomUUID(), ownerId: getAuth(req).userId!, name: parsed.data.productName || parsed.data.name || "My Brand", website: parsed.data.productUrl || "https://example.com", description: parsed.data.description || "Brand created with first campaign.", industry: "General", audience: parsed.data.audience || "General audience", personality: ["Confident"], visualStyle: "Modern", typography: "Clean sans", primaryColor: "#17352B", secondaryColors: ["#F3ECDD"], accentColor: "#D6F34A", logoPath: null, isDemo: false, createdAt: timestamp, updatedAt: timestamp };
-    await db.insert(brandsTable).values(brand);
+    const assetIds = Array.isArray(parsed.data.assetIds) ? parsed.data.assetIds : [];
+    const campaign = {
+      id: randomUUID(),
+      brandId: brand.id,
+      name: parsed.data.name,
+      productName: parsed.data.productName,
+      description: parsed.data.description || "",
+      productUrl: parsed.data.productUrl || "https://example.com",
+      benefits: parsed.data.benefits ?? [],
+      price: parsed.data.price ?? null,
+      offer: parsed.data.offer ?? null,
+      cta: parsed.data.cta || "Shop now",
+      audience: parsed.data.audience || "",
+      ageRange: parsed.data.ageRange || "25–44",
+      location: parsed.data.location || "",
+      interests: parsed.data.interests ?? [],
+      painPoints: parsed.data.painPoints ?? [],
+      desires: parsed.data.desires ?? [],
+      objective: parsed.data.objective || "Brand awareness",
+      platform: parsed.data.platform || "Meta",
+      format: parsed.data.format || "Static image",
+      aspectRatio: parsed.data.aspectRatio || "1:1",
+      assetIds,
+      status: "draft",
+      isDemo: false,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    await db.insert(campaignsTable).values(campaign);
+    res.status(201).json(serializeCampaign(campaign));
+  } catch (err: any) {
+    console.error("Create campaign failed:", err);
+    res.status(500).json({ error: err?.message || "Failed to create campaign." });
   }
-  const timestamp = now();
-  const { assetIds: _assetIds, ...campaignFields } = parsed.data as any;
-  const campaign = {
-    id: randomUUID(),
-    brandId: brand.id,
-    ...campaignFields,
-    price: parsed.data.price ?? null,
-    offer: parsed.data.offer ?? null,
-    benefits: parsed.data.benefits ?? [],
-    interests: parsed.data.interests ?? [],
-    painPoints: parsed.data.painPoints ?? [],
-    desires: parsed.data.desires ?? [],
-    status: "draft",
-    isDemo: false,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  await db.insert(campaignsTable).values(campaign);
-  res.status(201).json(CreateCampaignResponse.parse(serializeCampaign(campaign)));
 });
 
 router.get("/campaigns/:campaignId", async (req, res) => {
@@ -447,7 +491,7 @@ router.get("/creatives", async (req, res) => {
   if (!brand) { res.json([]); return; }
   const campaignId = typeof req.query.campaignId === "string" ? req.query.campaignId : undefined;
   const rows = await db.select().from(creativesTable).innerJoin(campaignsTable, eq(creativesTable.campaignId, campaignsTable.id)).where(and(eq(campaignsTable.brandId, brand.id), campaignId ? eq(creativesTable.campaignId, campaignId) : undefined)).orderBy(desc(creativesTable.createdAt));
-  res.json(ListCreativesResponse.parse(rows.map((r) => serializeCreative(r.creatives ?? r.creative ?? r))));
+  res.json(ListCreativesResponse.parse(rows.map((r: any) => serializeCreative(r.creatives ?? r.creative ?? r))));
 });
 
 router.get("/creatives/:creativeId", async (req, res) => {
@@ -465,7 +509,7 @@ router.patch("/creatives/:creativeId", async (req, res) => {
   res.json(UpdateCreativeResponse.parse(serializeCreative(updated)));
 });
 
-router.get("/intelligence", async (req, res) => {
+router.get("/intelligence", async (_req, res) => {
   res.json(GetCreativeIntelligenceResponse.parse({ recommendations: ["Lead with product-hero concepts for higher scroll-stop.", "Keep one primary CTA per creative.", "Test 2–3 variations of hooks and headlines."] }));
 });
 
