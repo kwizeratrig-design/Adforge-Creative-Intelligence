@@ -24,11 +24,6 @@ function requireStorageAuth(req: Request, res: Response): boolean {
   return false;
 }
 
-/**
- * POST /storage/uploads/request-url
- * With Vercel Blob: returns a marker so the client can use direct base64 upload.
- * With GCS: returns a presigned URL as before.
- */
 router.post(
   '/storage/uploads/request-url',
   async (req: Request, res: Response) => {
@@ -44,18 +39,11 @@ router.post(
 
     try {
       const { name, size, contentType } = parsed.data;
-      if (size > 10 * 1024 * 1024) {
-        res.status(413).json({ error: 'Files must be 10 MB or smaller' });
-        return;
-      }
       if (!contentType.startsWith('image/')) {
         res.status(415).json({ error: 'Only image files are supported' });
         return;
       }
 
-      // Prefer Vercel Blob — client will fall through to data-URL or direct upload.
-      // Returning a non-PUT URL makes the client use the data-URL path, which is fine;
-      // AI generation still uses Blob when BLOB_READ_WRITE_TOKEN is set.
       if (isBlobConfigured()) {
         res.json(
           RequestUploadUrlResponse.parse({
@@ -85,11 +73,6 @@ router.post(
   },
 );
 
-/**
- * POST /storage/uploads/direct
- * Body: { dataUrl: string, name?: string, contentType?: string }
- * Stores on Vercel Blob and returns a permanent public URL.
- */
 router.post('/storage/uploads/direct', async (req: Request, res: Response) => {
   if (!requireStorageAuth(req, res)) {
     return;
@@ -107,10 +90,6 @@ router.post('/storage/uploads/direct', async (req: Request, res: Response) => {
     }
     const contentType = req.body?.contentType || match[1] || 'image/jpeg';
     const bytes = Buffer.from(match[2], 'base64');
-    if (bytes.length > 10 * 1024 * 1024) {
-      res.status(413).json({ error: 'Files must be 10 MB or smaller' });
-      return;
-    }
     const name = req.body?.name || `upload-${Date.now()}.jpg`;
     const hosted = await uploadToBlob({
       data: bytes,
