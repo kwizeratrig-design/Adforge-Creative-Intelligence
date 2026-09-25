@@ -4,13 +4,14 @@ import {
   RequestUploadUrlResponse,
 } from '@workspace/api-zod';
 import { Router, type IRouter, type Request, type Response } from 'express';
+import { getAuth } from '@clerk/express';
 
 import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from '../lib/objectStorage';
+import { isBlobConfigured, uploadToBlob } from '../lib/blobStorage';
 import { logger } from '../lib/logger';
-import { getAuth } from '@clerk/express';
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -25,11 +26,8 @@ function requireStorageAuth(req: Request, res: Response): boolean {
 
 /**
  * POST /storage/uploads/request-url
- *
- * Request a presigned URL for file upload.
- * The client sends JSON metadata (name, size, contentType) — NOT the file.
- * Then uploads the file directly to the returned presigned URL.
- * Requires auth middleware so public callers cannot mint write-capable URLs.
+ * With Vercel Blob: returns a marker so the client can use direct base64 upload.
+ * With GCS: returns a presigned URL as before.
  */
 router.post(
   '/storage/uploads/request-url',
@@ -55,6 +53,20 @@ router.post(
         return;
       }
 
+      // Prefer Vercel Blob — client will fall through to data-URL or direct upload.
+      // Returning a non-PUT URL makes the client use the data-URL path, which is fine;
+      // AI generation still uses Blob when BLOB_READ_WRITE_TOKEN is set.
+      if (isBlobConfigured()) {
+        res.json(
+          RequestUploadUrlResponse.parse({
+            uploadURL: '',
+            objectPath: `blob://${name}`,
+            metadata: { name, size, contentType },
+          }),
+        );
+        return;
+      }
+
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
       const objectPath =
         objectStorageService.normalizeObjectEntityPath(uploadURL);
@@ -74,12 +86,48 @@ router.post(
 );
 
 /**
- * GET /storage/public-objects/*
- *
- * Serve public assets from PUBLIC_OBJECT_SEARCH_PATHS.
- * These are unconditionally public — no authentication or ACL checks.
- * IMPORTANT: Always provide this endpoint when object storage is set up.
+ * POST /storage/uploads/direct
+ * Body: { dataUrl: string, name?: string, contentType?: string }
+ * Stores on Vercel Blob and returns a permanent public URL.
  */
+router.post('/storage/uploads/direct', async (req: Request, res: Response) => {
+  if (!requireStorageAuth(req, res)) {
+    return;
+  }
+  if (!isBlobConfigured()) {
+    res.status(503).json({ error: 'Vercel Blob is not configured' });
+    return;
+  }
+  try {
+    const dataUrl = String(req.body?.dataUrl || '');
+    const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
+    if (!match) {
+      res.status(400).json({ error: 'Expected a base64 data URL' });
+      return;
+    }
+    const contentType = req.body?.contentType || match[1] || 'image/jpeg';
+    const bytes = Buffer.from(match[2], 'base64');
+    if (bytes.length > 10 * 1024 * 1024) {
+      res.status(413).json({ error: 'Files must be 10 MB or smaller' });
+      return;
+    }
+    const name = req.body?.name || `upload-${Date.now()}.jpg`;
+    const hosted = await uploadToBlob({
+      data: bytes,
+      contentType,
+      filename: `adforge/uploads/${name}`,
+    });
+    res.status(201).json({
+      url: hosted.url,
+      objectPath: hosted.pathname,
+      previewUrl: hosted.url,
+    });
+  } catch (error) {
+    logger.error({ err: error }, 'Direct blob upload failed');
+    res.status(500).json({ error: 'Upload failed' });
+  }
+});
+
 router.get(
   '/storage/public-objects/*filePath',
   async (req: Request, res: Response) => {
@@ -112,13 +160,6 @@ router.get(
   },
 );
 
-/**
- * GET /storage/objects/*
- *
- * Serve object entities from PRIVATE_OBJECT_DIR.
- * These are served from a separate path from /public-objects and can optionally
- * be protected with authentication or ACL checks based on the use case.
- */
 router.get('/storage/objects/*path', async (req: Request, res: Response) => {
   if (!requireStorageAuth(req, res)) {
     return;
