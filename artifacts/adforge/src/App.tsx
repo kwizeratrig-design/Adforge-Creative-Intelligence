@@ -44,6 +44,7 @@ const buttonPrimary = 'inline-flex items-center justify-center gap-2 rounded-ful
 const buttonGhost = 'inline-flex items-center justify-center gap-2 rounded-full border border-[#3a3d2b] px-4 py-2.5 text-sm text-[#c8cbb4] transition hover:bg-[#292c20]';
 const inputClass = 'w-full rounded-xl border border-[#34372a] bg-[#151712] px-3 py-2.5 text-sm text-[#e8e8d9] outline-none focus:border-[#d7f36b]/50';
 const cn = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(' ');
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 function Notice({ tone, children }: { tone?: 'error' | 'info'; children: ReactNode }) {
   return <div className={cn('rounded-xl border px-4 py-3 text-sm', tone === 'error' ? 'border-red-500/40 bg-red-500/10 text-red-200' : 'border-[#3d4721] bg-[#252b16] text-[#b8bf8a]')}>{children}</div>;
@@ -65,15 +66,23 @@ function CampaignAssetPicker({ selectedIds, onChange }: { selectedIds: string[];
   const [uploading, setUploading] = useState(false);
   const assets: AnyRecord[] = assetsQ.data || [];
   const upload = async (file: File) => {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      alert('Please use an image under 5MB (JPG/PNG/WebP).');
+      return;
+    }
     setUploading(true);
     try {
       let previewUrl = '';
       let objectPath: string | null = null;
       try {
         const upload = await requestUpload.mutateAsync({ data: { name: file.name, size: file.size, contentType: file.type } });
-        await fetch(upload.uploadURL, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
-        objectPath = upload.objectPath;
-        previewUrl = `${apiBaseUrl}/api/storage${upload.objectPath}`;
+        if (upload.uploadURL) {
+          await fetch(upload.uploadURL, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+          objectPath = upload.objectPath;
+          previewUrl = `${apiBaseUrl}/api/storage${upload.objectPath}`;
+        } else {
+          throw new Error('No upload URL');
+        }
       } catch {
         previewUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
@@ -90,7 +99,7 @@ function CampaignAssetPicker({ selectedIds, onChange }: { selectedIds: string[];
       qc.invalidateQueries({ queryKey: getListBrandAssetsQueryKey() });
     } catch (err) {
       console.error(err);
-      alert('Could not upload media. Try a smaller JPG/PNG under 2MB.');
+      alert('Could not upload media. Try a smaller JPG/PNG under 5MB.');
     } finally {
       setUploading(false);
     }
@@ -101,7 +110,7 @@ function CampaignAssetPicker({ selectedIds, onChange }: { selectedIds: string[];
         <div>
           <div className="font-mono-ui text-[10px] uppercase tracking-[.18em] text-[#9cad4b]">Supporting media</div>
           <h3 className="mt-2 font-semibold">Give the image model something real.</h3>
-          <p className="mt-1 text-xs leading-5 text-[#747866]">Upload a logo, product photo, or service image so AI can match your brand.</p>
+          <p className="mt-1 text-xs leading-5 text-[#747866]">Upload a logo, product photo, or service image (up to 5MB) so AI can match your brand.</p>
         </div>
         <label className={cn(buttonGhost, 'shrink-0 cursor-pointer')}>
           <span>{uploading ? 'Uploading…' : 'Upload logo / product image'}</span>
@@ -239,7 +248,7 @@ function CampaignCreate() {
         </div>
         <CampaignAssetPicker selectedIds={form.assetIds} onChange={(assetIds) => set('assetIds', assetIds)} />
         <button className={buttonPrimary} onClick={submit} disabled={mutation.isPending || !form.name || !form.productName}>{mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpRight className="h-4 w-4" />}Create campaign</button>
-        {mutation.isError && <Notice tone="error">{String((mutation.error as any)?.message || (mutation.error as any)?.data?.error || 'Could not create campaign.')}</Notice>}
+        {mutation.isError && <Notice tone="error">{String((mutation.error as any)?.data?.error || (mutation.error as any)?.message || 'Could not create campaign.')}</Notice>}
       </div>
     </div>
   );
