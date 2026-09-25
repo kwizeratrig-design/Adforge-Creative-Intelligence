@@ -100,33 +100,21 @@ function serializeCreative(creative: any) {
 }
 
 async function getUserBrand(userId: string) {
-  const [userBrand] = await db
-    .select()
-    .from(brandsTable)
-    .where(eq(brandsTable.ownerId, userId))
-    .orderBy(desc(brandsTable.updatedAt))
-    .limit(1);
+  const [userBrand] = await db.select().from(brandsTable).where(eq(brandsTable.ownerId, userId)).orderBy(desc(brandsTable.updatedAt)).limit(1);
   return userBrand;
 }
 
 async function getUserCampaign(userId: string, campaignId: string) {
   const brand = await getUserBrand(userId);
   if (!brand) return undefined;
-  const [campaign] = await db
-    .select()
-    .from(campaignsTable)
-    .where(and(eq(campaignsTable.id, campaignId), eq(campaignsTable.brandId, brand.id)));
+  const [campaign] = await db.select().from(campaignsTable).where(and(eq(campaignsTable.id, campaignId), eq(campaignsTable.brandId, brand.id)));
   return campaign;
 }
 
 async function getUserCreative(userId: string, creativeId: string) {
   const brand = await getUserBrand(userId);
   if (!brand) return undefined;
-  const [creative] = await db
-    .select({ creative: creativesTable })
-    .from(creativesTable)
-    .innerJoin(campaignsTable, eq(creativesTable.campaignId, campaignsTable.id))
-    .where(and(eq(creativesTable.id, creativeId), eq(campaignsTable.brandId, brand.id)));
+  const [creative] = await db.select({ creative: creativesTable }).from(creativesTable).innerJoin(campaignsTable, eq(creativesTable.campaignId, campaignsTable.id)).where(and(eq(creativesTable.id, creativeId), eq(campaignsTable.brandId, brand.id)));
   return creative?.creative;
 }
 
@@ -151,18 +139,115 @@ async function generateConcepts(userId: string, campaignId: string) {
     visualDirection: `${campaign.productName} in a ${campaign.platform} native scene with deliberate brand composition.`,
     hook: index === 0 ? "Make the next week feel easier." : `A better way to experience ${campaign.productName}.`,
     headline: index === 0 ? "Better results. Less guesswork." : `Your ${campaign.productName} moment.`,
-    bodyCopy: `${campaign.description} ${campaign.benefits.slice(0, 2).join(" and ")}.`,
+    bodyCopy: `${campaign.description} ${(campaign.benefits || []).slice(0, 2).join(" and ")}.`,
     cta: campaign.cta,
     composition: "One clear focal point, generous safe margins, copy kept legible.",
     colorDirection: "Brand primary with a warm neutral field and a single electric accent.",
     emotion: ["Relief", "Desire", "Curiosity", "Confidence"][index],
     audienceInsight: campaign.audience,
-    creativeCount: 3,
+    creativeCount: 2,
     createdAt: now(),
     updatedAt: timestamp,
   }));
   await db.insert(creativeConceptsTable).values(generated);
   return generated;
+}
+
+function buildCreativePrompt(brand: any, campaign: any, concept: any, variationIndex: number) {
+  const colors = [brand?.primaryColor, brand?.accentColor, ...(brand?.secondaryColors || [])].filter(Boolean).join(", ");
+  const personality = Array.isArray(brand?.personality) ? brand.personality.join(", ") : "premium";
+  const variationHints = [
+    "hero product shot, centered, premium lighting",
+    "lifestyle scene with product in natural use context",
+    "bold graphic composition with strong negative space",
+  ];
+  return [
+    `Professional advertising creative for ${campaign.platform}.`,
+    `Brand: ${brand?.name || campaign.productName}. Product: ${campaign.productName}.`,
+    brand?.description ? `Brand story: ${brand.description}.` : "",
+    `Industry: ${brand?.industry || "hospitality"}. Visual style: ${brand?.visualStyle || "modern"}.`,
+    `Brand colors: ${colors || "deep green and warm cream"}. Personality: ${personality}.`,
+    `Concept family: ${concept.family}. Angle: ${concept.angle}.`,
+    `Visual direction: ${concept.visualDirection}.`,
+    `Emotion: ${concept.emotion}. Audience: ${campaign.audience}.`,
+    campaign.location ? `Location context: ${campaign.location}.` : "",
+    variationHints[variationIndex % variationHints.length],
+    "Photorealistic, high-end commercial photography, sharp detail, no text overlay, no watermark.",
+  ].filter(Boolean).join(" ");
+}
+
+async function generateCreativesForCampaign(userId: string, campaignId: string, conceptIds?: string[]) {
+  const campaign = await getUserCampaign(userId, campaignId);
+  if (!campaign) return { error: "Campaign not found.", status: 404 as const };
+  const brand = await getUserBrand(userId);
+  const concepts: any[] = await generateConcepts(userId, campaign.id);
+  const selected = conceptIds?.length ? concepts.filter((c) => conceptIds.includes(c.id)) : concepts;
+  if (!selected.length) return { error: "No concepts available. Generate concepts first.", status: 400 as const };
+
+  const assets = brand
+    ? await db.select().from(brandAssetsTable).where(eq(brandAssetsTable.brandId, brand.id)).orderBy(desc(brandAssetsTable.createdAt))
+    : [];
+  const referenceImages = assets
+    .map((a) => a.previewUrl)
+    .filter((url): url is string => Boolean(url) && (url.startsWith("http://") || url.startsWith("https://")));
+
+  const timestamp = now();
+  const variationsPerConcept = 2;
+  const creatives: any[] = [];
+  const imageOffset = Math.floor(Math.random() * placeholderImages.length);
+  const token = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_API_KEY;
+
+  for (let conceptIndex = 0; conceptIndex < selected.length; conceptIndex++) {
+    const concept = selected[conceptIndex];
+    for (let index = 0; index < variationsPerConcept; index++) {
+      const creative: any = {
+        id: randomUUID(),
+        campaignId: campaign.id,
+        conceptId: concept.id,
+        conceptName: concept.name,
+        family: concept.family,
+        hook: concept.hook,
+        headline: concept.headline,
+        bodyCopy: concept.bodyCopy,
+        cta: concept.cta,
+        previewUrl: placeholderImages[(imageOffset + conceptIndex + index) % placeholderImages.length],
+        platform: campaign.platform,
+        format: campaign.format,
+        aspectRatio: campaign.aspectRatio,
+        emotionalDriver: concept.emotion,
+        creativeAngle: concept.angle,
+        audienceInsight: concept.audienceInsight,
+        readinessScore: 88 + ((conceptIndex + index) % 8),
+        isFavorite: false,
+        isDemo: false,
+        status: "ready",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+
+      if (token) {
+        try {
+          const prompt = buildCreativePrompt(brand, campaign, concept, index);
+          const generated = await generateAndStoreReplicateImage({
+            prompt,
+            aspectRatio: campaign.aspectRatio || "4:5",
+            referenceImages,
+          });
+          if (generated?.previewUrl) {
+            creative.previewUrl = generated.previewUrl;
+            creative.status = "ai_generated";
+          }
+        } catch (err) {
+          console.error("Replicate image generation failed:", err);
+          creative.status = "placeholder";
+        }
+      }
+      creatives.push(creative);
+    }
+  }
+
+  if (creatives.length) await db.insert(creativesTable).values(creatives);
+  return { creatives, status: 201 as const };
 }
 
 router.use(requireAuth);
@@ -250,7 +335,22 @@ router.post("/campaigns", async (req, res) => {
     await db.insert(brandsTable).values(brand);
   }
   const timestamp = now();
-  const campaign = { id: randomUUID(), brandId: brand.id, ...parsed.data, assetIds: parsed.data.assetIds ?? [], price: parsed.data.price ?? null, offer: parsed.data.offer ?? null, benefits: parsed.data.benefits ?? [], interests: parsed.data.interests ?? [], painPoints: parsed.data.painPoints ?? [], desires: parsed.data.desires ?? [], status: "draft", isDemo: false, createdAt: timestamp, updatedAt: timestamp };
+  const { assetIds: _assetIds, ...campaignFields } = parsed.data as any;
+  const campaign = {
+    id: randomUUID(),
+    brandId: brand.id,
+    ...campaignFields,
+    price: parsed.data.price ?? null,
+    offer: parsed.data.offer ?? null,
+    benefits: parsed.data.benefits ?? [],
+    interests: parsed.data.interests ?? [],
+    painPoints: parsed.data.painPoints ?? [],
+    desires: parsed.data.desires ?? [],
+    status: "draft",
+    isDemo: false,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
   await db.insert(campaignsTable).values(campaign);
   res.status(201).json(CreateCampaignResponse.parse(serializeCampaign(campaign)));
 });
@@ -277,49 +377,30 @@ router.post("/campaigns/:campaignId/concepts/generate", async (req, res) => {
 });
 
 router.post("/campaigns/:campaignId/creatives/generate", async (req, res) => {
-  const campaign = await getUserCampaign(getAuth(req).userId!, req.params.campaignId);
-  if (!campaign) { res.status(404).json({ error: "Campaign not found." }); return; }
-  const concepts: any[] = await generateConcepts(getAuth(req).userId!, campaign.id);
-  const timestamp = now();
-  const imageOffset = Math.floor(Math.random() * placeholderImages.length);
-  const creatives = concepts.flatMap((concept, conceptIndex) => Array.from({ length: 3 }, (_, index) => ({
-    id: randomUUID(), campaignId: campaign.id, conceptId: concept.id, conceptName: concept.name, family: concept.family, hook: concept.hook, headline: concept.headline, bodyCopy: concept.bodyCopy, cta: concept.cta,
-    previewUrl: placeholderImages[(imageOffset + conceptIndex + index) % placeholderImages.length], platform: campaign.platform, format: campaign.format, aspectRatio: campaign.aspectRatio,
-    emotionalDriver: concept.emotion, creativeAngle: concept.angle, audienceInsight: concept.audienceInsight, readinessScore: 88 + ((conceptIndex + index) % 8), isFavorite: false, isDemo: false, status: "ready", createdAt: timestamp, updatedAt: timestamp,
-  })));
-  if (creatives.length) await db.insert(creativesTable).values(creatives);
-  res.status(201).json(GenerateCreativesResponse.parse(creatives.map(serializeCreative)));
+  try {
+    const result = await generateCreativesForCampaign(getAuth(req).userId!, req.params.campaignId);
+    if (result.error) { res.status(result.status).json({ error: result.error }); return; }
+    res.status(201).json(GenerateCreativesResponse.parse(result.creatives!.map(serializeCreative)));
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err?.message || "Failed to generate creatives." });
+  }
 });
 
 router.post("/creatives/generate", async (req, res) => {
-  const parsed = GenerateCreativesBody.safeParse(req.body ?? {});
-  if (!parsed.success) { res.status(400).json({ error: "Invalid generate request.", details: parsed.error.flatten() }); return; }
-  const campaign = await getUserCampaign(getAuth(req).userId!, parsed.data.campaignId);
-  if (!campaign) { res.status(404).json({ error: "Campaign not found." }); return; }
-  const concepts: any[] = await generateConcepts(getAuth(req).userId!, campaign.id);
-  const selected = parsed.data.conceptIds?.length ? concepts.filter((c) => parsed.data.conceptIds!.includes(c.id)) : concepts;
-  const brandAssets = campaign.assetIds?.length ? await db.select().from(brandAssetsTable).where(and(eq(brandAssetsTable.brandId, campaign.brandId), inArray(brandAssetsTable.id, campaign.assetIds))) : [];
-  const referenceImages: string[] = brandAssets.map((asset: { previewUrl: string }) => asset.previewUrl).filter(Boolean);
-  const timestamp = now();
-  const imageOffset = Math.floor(Math.random() * placeholderImages.length);
-  const creatives = selected.flatMap((concept, conceptIndex) => Array.from({ length: 3 }, (_, index) => ({
-    id: randomUUID(), campaignId: campaign.id, conceptId: concept.id, conceptName: concept.name, family: concept.family, hook: concept.hook, headline: concept.headline, bodyCopy: concept.bodyCopy, cta: concept.cta,
-    previewUrl: placeholderImages[(imageOffset + conceptIndex + index) % placeholderImages.length], platform: campaign.platform, format: campaign.format, aspectRatio: campaign.aspectRatio,
-    emotionalDriver: concept.emotion, creativeAngle: concept.angle, audienceInsight: concept.audienceInsight, readinessScore: 88 + ((conceptIndex + index) % 8), isFavorite: false, isDemo: false, status: "ready", createdAt: timestamp, updatedAt: timestamp,
-  })));
-  if (process.env.REPLICATE_API_TOKEN) {
-    for (const creative of creatives) {
-      const concept = selected.find((item) => item.id === creative.conceptId);
-      const generated = await generateAndStoreReplicateImage({
-        prompt: `${concept?.visualDirection ?? creative.creativeAngle}. ${creative.headline}. ${creative.bodyCopy}. Use the supplied product or brand reference as the visual source of truth. Preserve recognizable shape, colors, packaging, and logo placement. No text in image. Reference images: ${referenceImages.join(", ")}`,
-        aspectRatio: creative.aspectRatio,
-        referenceImages,
-      });
-      creative.previewUrl = generated.previewUrl;
+  try {
+    const parsed = GenerateCreativesBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid generate request.", details: parsed.error.flatten() });
+      return;
     }
+    const result = await generateCreativesForCampaign(getAuth(req).userId!, parsed.data.campaignId, parsed.data.conceptIds);
+    if (result.error) { res.status(result.status).json({ error: result.error }); return; }
+    res.status(201).json(GenerateCreativesResponse.parse(result.creatives!.map(serializeCreative)));
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err?.message || "Failed to generate creatives." });
   }
-  if (creatives.length) await db.insert(creativesTable).values(creatives);
-  res.status(201).json(GenerateCreativesResponse.parse(creatives.map(serializeCreative)));
 });
 
 router.get("/creatives", async (req, res) => {
