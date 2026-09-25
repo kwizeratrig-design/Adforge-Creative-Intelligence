@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
 import { Shell } from './components/Shell';
+import { AuthTokenBridge } from './components/AuthTokenBridge';
 
 type AnyRecord = Record<string, any>;
 const queryClient = new QueryClient();
@@ -176,7 +177,7 @@ function BrandDNA() {
           <label key={key} className="block text-sm text-[#9b9d89]">{key}<input className={cn(inputClass, 'mt-2')} value={form[key] || ''} onChange={(e) => set(key, e.target.value)} /></label>
         ))}
         <button className={buttonPrimary} onClick={save} disabled={createBrand.isPending || updateBrand.isPending || !form.name}>{(createBrand.isPending || updateBrand.isPending) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Save brand</button>
-        {(createBrand.isError || updateBrand.isError) && <Notice tone="error">Could not save brand.</Notice>}
+        {(createBrand.isError || updateBrand.isError) && <Notice tone="error">{String((createBrand.error as any)?.data?.error || (updateBrand.error as any)?.data?.error || (createBrand.error as any)?.message || (updateBrand.error as any)?.message || 'Could not save brand. Try signing out and back in.')}</Notice>}
         {(createBrand.isSuccess || updateBrand.isSuccess) && <Notice>Brand saved.</Notice>}
       </div>
     </div>
@@ -368,19 +369,21 @@ function ProtectedApp() {
   if (!isLoaded) return <div className="grid min-h-[100dvh] place-items-center bg-[#10110d] text-[#9b9d89]">Loading…</div>;
   if (!isSignedIn) return <Redirect to="/sign-in" />;
   return (
-    <Shell>
-      <Switch>
-        <Route path="/workspace" component={WorkspaceHome} />
-        <Route path="/brand-dna" component={BrandDNA} />
-        <Route path="/campaigns/new" component={CampaignCreate} />
-        <Route path="/campaigns/:id" component={CampaignDetail} />
-        <Route path="/campaigns" component={Campaigns} />
-        <Route path="/creative-lab" component={CreativeLab} />
-        <Route path="/intelligence" component={Intelligence} />
-        <Route path="/settings" component={SettingsPage} />
-        <Route><Redirect to="/workspace" /></Route>
-      </Switch>
-    </Shell>
+    <AuthTokenBridge>
+      <Shell>
+        <Switch>
+          <Route path="/workspace" component={WorkspaceHome} />
+          <Route path="/brand-dna" component={BrandDNA} />
+          <Route path="/campaigns/new" component={CampaignCreate} />
+          <Route path="/campaigns/:id" component={CampaignDetail} />
+          <Route path="/campaigns" component={Campaigns} />
+          <Route path="/creative-lab" component={CreativeLab} />
+          <Route path="/intelligence" component={Intelligence} />
+          <Route path="/settings" component={SettingsPage} />
+          <Route><Redirect to="/workspace" /></Route>
+        </Switch>
+      </Shell>
+    </AuthTokenBridge>
   );
 }
 
