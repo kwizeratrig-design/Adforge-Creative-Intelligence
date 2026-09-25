@@ -151,7 +151,7 @@ async function generateConcepts(userId: string, campaignId: string) {
     colorDirection: "Brand primary with a warm neutral field and a single electric accent.",
     emotion: ["Relief", "Desire", "Curiosity", "Confidence"][index],
     audienceInsight: campaign.audience,
-    creativeCount: 2,
+    creativeCount: 1,
     createdAt: now(),
     updatedAt: timestamp,
   }));
@@ -190,56 +190,70 @@ async function generateCreativesForCampaign(userId: string, campaignId: string, 
   const selected = conceptIds?.length ? concepts.filter((c) => conceptIds.includes(c.id)) : concepts;
   if (!selected.length) return { error: "No concepts available. Generate concepts first.", status: 400 as const };
   const assets = brand ? await db.select().from(brandAssetsTable).where(eq(brandAssetsTable.brandId, brand.id)).orderBy(desc(brandAssetsTable.createdAt)) : [];
-  const referenceImages = assets.map((a) => a.previewUrl).filter((url): url is string => Boolean(url) && (url.startsWith("http://") || url.startsWith("https://")));
+  const referenceImages = assets
+    .map((a) => a.previewUrl)
+    .filter((url): url is string => Boolean(url) && (url.startsWith("http://") || url.startsWith("https://")));
+
+  // Fast path for serverless: 1 image × 2 concepts, save immediately.
+  const toGenerate = selected.slice(0, 2);
   const timestamp = now();
-  const variationsPerConcept = 2;
   const creatives: any[] = [];
   const imageOffset = Math.floor(Math.random() * placeholderImages.length);
   const token = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_API_KEY;
-  for (let conceptIndex = 0; conceptIndex < selected.length; conceptIndex++) {
-    const concept = selected[conceptIndex];
-    for (let index = 0; index < variationsPerConcept; index++) {
-      const creative: any = {
-        id: randomUUID(),
-        campaignId: campaign.id,
-        conceptId: concept.id,
-        conceptName: concept.name,
-        family: concept.family,
-        hook: concept.hook,
-        headline: concept.headline,
-        bodyCopy: concept.bodyCopy,
-        cta: concept.cta,
-        previewUrl: placeholderImages[(imageOffset + conceptIndex + index) % placeholderImages.length],
-        platform: campaign.platform,
-        format: campaign.format,
-        aspectRatio: campaign.aspectRatio,
-        emotionalDriver: concept.emotion,
-        creativeAngle: concept.angle,
-        audienceInsight: concept.audienceInsight,
-        readinessScore: 88 + ((conceptIndex + index) % 8),
-        isFavorite: false,
-        isDemo: false,
-        status: "ready",
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      };
-      if (token) {
-        try {
-          const prompt = buildCreativePrompt(brand, campaign, concept, index);
-          const generated = await generateAndStoreReplicateImage({ prompt, aspectRatio: campaign.aspectRatio || "4:5", referenceImages });
-          if (generated?.previewUrl) {
-            creative.previewUrl = generated.previewUrl;
-            creative.status = "ai_generated";
-          }
-        } catch (err) {
-          console.error("Replicate image generation failed:", err);
+
+  for (let conceptIndex = 0; conceptIndex < toGenerate.length; conceptIndex++) {
+    const concept = toGenerate[conceptIndex];
+    const creative: any = {
+      id: randomUUID(),
+      campaignId: campaign.id,
+      conceptId: concept.id,
+      conceptName: concept.name,
+      family: concept.family,
+      hook: concept.hook,
+      headline: concept.headline,
+      bodyCopy: concept.bodyCopy,
+      cta: concept.cta,
+      previewUrl: placeholderImages[(imageOffset + conceptIndex) % placeholderImages.length],
+      platform: campaign.platform,
+      format: campaign.format,
+      aspectRatio: campaign.aspectRatio,
+      emotionalDriver: concept.emotion,
+      creativeAngle: concept.angle,
+      audienceInsight: concept.audienceInsight,
+      readinessScore: 88 + (conceptIndex % 8),
+      isFavorite: false,
+      isDemo: false,
+      status: "ready",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    if (token) {
+      try {
+        const prompt = buildCreativePrompt(brand, campaign, concept, 0);
+        const generated = await generateAndStoreReplicateImage({
+          prompt,
+          aspectRatio: campaign.aspectRatio || "1:1",
+          referenceImages: referenceImages.slice(0, 1),
+        });
+        if (generated?.previewUrl) {
+          creative.previewUrl = generated.previewUrl;
+          creative.status = "ai_generated";
+        } else {
           creative.status = "placeholder";
         }
+      } catch (err) {
+        console.error("Replicate image generation failed:", err);
+        creative.status = "placeholder";
       }
-      creatives.push(creative);
+    } else {
+      creative.status = "placeholder";
     }
+
+    await db.insert(creativesTable).values(creative);
+    creatives.push(creative);
   }
-  if (creatives.length) await db.insert(creativesTable).values(creatives);
+
   return { creatives, status: 201 as const };
 }
 
@@ -417,7 +431,7 @@ router.delete("/brands/assets/:assetId", async (req, res) => {
 router.get("/campaigns", async (req, res) => {
   const brand = await getUserBrand(getAuth(req).userId!);
   const campaigns = brand ? await db.select().from(campaignsTable).where(eq(campaignsTable.brandId, brand.id)).orderBy(desc(campaignsTable.createdAt)) : [];
-  res.json(ListCampaignsResponse.parse(campaigns.map(serializeCampaign)));
+  res.json(campaigns.map(serializeCampaign));
 });
 
 router.post("/campaigns", async (req, res) => {
@@ -534,11 +548,24 @@ router.post("/creatives/generate", async (req, res) => {
 });
 
 router.get("/creatives", async (req, res) => {
-  const brand = await getUserBrand(getAuth(req).userId!);
-  if (!brand) { res.json([]); return; }
-  const campaignId = typeof req.query.campaignId === "string" ? req.query.campaignId : undefined;
-  const rows = await db.select().from(creativesTable).innerJoin(campaignsTable, eq(creativesTable.campaignId, campaignsTable.id)).where(and(eq(campaignsTable.brandId, brand.id), campaignId ? eq(creativesTable.campaignId, campaignId) : undefined)).orderBy(desc(creativesTable.createdAt));
-  res.json(rows.map((r: any) => serializeCreative(r.creatives ?? r.creative ?? r)));
+  try {
+    const brand = await getUserBrand(getAuth(req).userId!);
+    if (!brand) { res.json([]); return; }
+    const campaignId = typeof req.query.campaignId === "string" ? req.query.campaignId : undefined;
+    let rows;
+    if (campaignId) {
+      rows = await db.select().from(creativesTable).where(eq(creativesTable.campaignId, campaignId)).orderBy(desc(creativesTable.createdAt));
+    } else {
+      const campIds = await db.select({ id: campaignsTable.id }).from(campaignsTable).where(eq(campaignsTable.brandId, brand.id));
+      const ids = campIds.map((c) => c.id);
+      if (!ids.length) { res.json([]); return; }
+      rows = await db.select().from(creativesTable).where(inArray(creativesTable.campaignId, ids)).orderBy(desc(creativesTable.createdAt));
+    }
+    res.json(rows.map(serializeCreative));
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err?.message || "Failed to list creatives." });
+  }
 });
 
 router.get("/creatives/:creativeId", async (req, res) => {
