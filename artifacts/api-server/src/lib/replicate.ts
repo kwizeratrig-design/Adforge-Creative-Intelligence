@@ -45,9 +45,9 @@ async function replicateRequest<T>(
   path: string,
   options: RequestInit,
 ): Promise<T> {
-  const token = process.env.REPLICATE_API_TOKEN;
+  const token = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_API_KEY;
   if (!token) {
-    throw new Error("REPLICATE_API_TOKEN must be configured to generate images.");
+    throw new Error("REPLICATE_API_TOKEN (or REPLICATE_API_KEY) must be configured to generate images.");
   }
   const headers = new Headers(options.headers);
   headers.set("Authorization", `Bearer ${token}`);
@@ -161,27 +161,32 @@ export async function generateAndStoreReplicateImage({
     );
   }
 
-  const bytes = Buffer.from(await imageResponse.arrayBuffer());
-  const contentType =
-    imageResponse.headers.get("content-type") || "image/jpeg";
-  const objectStorage = new ObjectStorageService();
-  const uploadUrl = await objectStorage.getObjectEntityUploadURL();
-  const objectPath = objectStorage.normalizeObjectEntityPath(uploadUrl);
-  const uploadResponse = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: { "Content-Type": contentType },
-    body: bytes,
-    signal: AbortSignal.timeout(60_000),
-  });
-
-  if (!uploadResponse.ok) {
-    throw new Error(
-      `Generated image could not be stored (${uploadResponse.status}).`,
-    );
+  // Prefer object storage when configured; otherwise use Replicate CDN URL directly.
+  try {
+    const bytes = Buffer.from(await imageResponse.arrayBuffer());
+    const contentType =
+      imageResponse.headers.get("content-type") || "image/jpeg";
+    const objectStorage = new ObjectStorageService();
+    const uploadUrl = await objectStorage.getObjectEntityUploadURL();
+    const objectPath = objectStorage.normalizeObjectEntityPath(uploadUrl);
+    const uploadResponse = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body: bytes,
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (uploadResponse.ok) {
+      return {
+        previewUrl: `/api/storage${objectPath}`,
+        objectPath,
+      };
+    }
+  } catch {
+    // Object storage not configured — fall through to Replicate URL.
   }
 
   return {
-    previewUrl: `/api/storage${objectPath}`,
-    objectPath,
+    previewUrl: generatedUrl,
+    objectPath: null,
   };
 }
