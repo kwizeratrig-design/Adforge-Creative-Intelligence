@@ -1,4 +1,5 @@
 import { ObjectStorageService } from "./objectStorage";
+import { isBlobConfigured, rehostUrlToBlob } from "./blobStorage";
 
 const DEFAULT_MODEL = "black-forest-labs/flux-schnell";
 const TERMINAL_STATUSES = new Set(["succeeded", "failed", "canceled"]);
@@ -152,39 +153,46 @@ export async function generateAndStoreReplicateImage({
     throw new Error("Replicate returned no image output.");
   }
 
-  const imageResponse = await fetch(generatedUrl, {
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!imageResponse.ok) {
-    throw new Error(
-      `Generated image could not be downloaded (${imageResponse.status}).`,
-    );
+  // 1) Vercel Blob (preferred — no Google Cloud)
+  if (isBlobConfigured()) {
+    try {
+      const hosted = await rehostUrlToBlob(generatedUrl);
+      return { previewUrl: hosted.url, objectPath: hosted.pathname };
+    } catch (err) {
+      console.error("Vercel Blob rehost failed, using Replicate URL:", err);
+    }
   }
 
-  // Prefer object storage when configured; otherwise use Replicate CDN URL directly.
+  // 2) Google Cloud object storage (optional legacy)
   try {
-    const bytes = Buffer.from(await imageResponse.arrayBuffer());
-    const contentType =
-      imageResponse.headers.get("content-type") || "image/jpeg";
-    const objectStorage = new ObjectStorageService();
-    const uploadUrl = await objectStorage.getObjectEntityUploadURL();
-    const objectPath = objectStorage.normalizeObjectEntityPath(uploadUrl);
-    const uploadResponse = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": contentType },
-      body: bytes,
+    const imageResponse = await fetch(generatedUrl, {
       signal: AbortSignal.timeout(60_000),
     });
-    if (uploadResponse.ok) {
-      return {
-        previewUrl: `/api/storage${objectPath}`,
-        objectPath,
-      };
+    if (imageResponse.ok) {
+      const bytes = Buffer.from(await imageResponse.arrayBuffer());
+      const contentType =
+        imageResponse.headers.get("content-type") || "image/jpeg";
+      const objectStorage = new ObjectStorageService();
+      const uploadUrl = await objectStorage.getObjectEntityUploadURL();
+      const objectPath = objectStorage.normalizeObjectEntityPath(uploadUrl);
+      const uploadResponse = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": contentType },
+        body: bytes,
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (uploadResponse.ok) {
+        return {
+          previewUrl: `/api/storage${objectPath}`,
+          objectPath,
+        };
+      }
     }
   } catch {
-    // Object storage not configured — fall through to Replicate URL.
+    // not configured
   }
 
+  // 3) Replicate CDN URL (works for demos)
   return {
     previewUrl: generatedUrl,
     objectPath: null,
